@@ -374,9 +374,14 @@ def convert_clip_via_psd(clip_path, use_recycle_bin=True):
                  logging.warning(f"错误处理中：删除临时PSD文件失败 {temp_psd_path}: {cleanup_e}")
         return False
 
+def process_clip_wrapper(args):
+    """
+    包装函数用于多进程处理CLIP文件
+    """
+    return convert_clip_via_psd(*args)
 
 def convert_clip_files(directory, use_recycle_bin=True):
-    """转换目录中的所有CLIP文件 (通过先转为PSD)"""
+    """转换目录中的所有CLIP文件 (通过先转为PSD，使用多进程)"""
     directory = Path(directory)
     clip_files = list(directory.rglob('*.clip'))
 
@@ -386,16 +391,28 @@ def convert_clip_files(directory, use_recycle_bin=True):
 
     logging.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")
 
-    # 使用 tqdm 显示进度
-    with tqdm(total=len(clip_files), desc="转换CLIP文件 (via PSD)") as pbar:
-        for clip_file in clip_files:
-            # 调用新的转换函数
-            success = convert_clip_via_psd(str(clip_file), use_recycle_bin)
-            pbar.update(1) # 更新进度条
-            # 更新进度条描述
-            if success:
-                pbar.set_description(f"成功: {clip_file.name}")
-            else:
-                pbar.set_description(f"失败: {clip_file.name}")
+    # 检查内存使用情况，决定进程数
+    memory_percent = psutil.virtual_memory().percent
+    if memory_percent > 90:
+        logging.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
+        num_processes = 1
+    else:
+        # CLIP转换比较耗资源，限制进程数
+        num_processes = max(1, min(4, cpu_count() // 2)) 
+    
+    print(f"使用 {num_processes} 个进程进行CLIP文件转换")
 
-    logging.info(f"CLIP文件转换完成")
+    results = []
+    with Pool(num_processes) as pool:
+        args_list = [(str(f), use_recycle_bin) for f in clip_files]
+        
+        # 使用 tqdm 显示进度
+        with tqdm(total=len(clip_files), desc="转换CLIP文件 (via PSD)") as pbar:
+            for success in pool.imap_unordered(process_clip_wrapper, args_list):
+                results.append(success)
+                pbar.update(1) # 更新进度条
+                # 更新进度条描述 (可选，可能因并发导致信息不准确)
+                # pbar.set_description(f"{'成功' if success else '失败'}: ...") 
+
+    success_count = sum(results)
+    print(f"\nCLIP文件转换完成: 成功 {success_count}/{len(clip_files)} 个文件")
