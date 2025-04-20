@@ -398,7 +398,7 @@ def convert_clip_files(directory, use_recycle_bin=True):
         num_processes = 1
     else:
         # CLIP转换比较耗资源，限制进程数
-        num_processes = max(1, min(4, cpu_count() // 2)) 
+        num_processes = max(1, min(4, cpu_count() - 1))  # 保留一个CPU核心
     
     print(f"使用 {num_processes} 个进程进行CLIP文件转换")
 
