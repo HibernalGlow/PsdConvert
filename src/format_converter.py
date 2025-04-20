@@ -1,4 +1,5 @@
 import os
+import sys # 添加 sys 模块导入
 from pathlib import Path
 import logging
 from PIL import Image
@@ -11,6 +12,12 @@ import psutil
 
 # 支持的目标格式
 TARGET_FORMATS = ['.psd', '.pdf', '.clip']
+
+# 定义 clip_to_psd.py 脚本的路径
+# __file__ 是当前脚本(format_converter.py)的路径
+# 我们需要向上两级到 src/projects/PsdConvert/，然后进入 tool/clip_to_psd/
+_current_dir = os.path.dirname(os.path.abspath(__file__))
+CLIP_TO_PSD_SCRIPT_PATH = os.path.abspath(os.path.join(_current_dir, '..', 'tool', 'clip_to_psd', 'clip_to_psd.py'))
 
 def process_single_psd(psd_path, out_path, use_recycle_bin=True):
     """
@@ -64,7 +71,14 @@ def process_single_psd(psd_path, out_path, use_recycle_bin=True):
                     img.colorspace = 'rgb'
                     # 直接保存为PNG
                     filename = os.path.splitext(os.path.basename(psd_path))[0]
-                    new_filename = f"{filename}[PSD].png"
+                    # Avoid adding [PSD] if it's already from a temp file
+                    if not filename.endswith('.temp_intermediate'):
+                        new_filename = f"{filename}[PSD].png"
+                    else:
+                        # Use the original base name for the final PNG
+                        original_base_name = filename.replace('.temp_intermediate', '')
+                        new_filename = f"{original_base_name}[CLIP].png"
+
                     png_path = os.path.join(os.path.dirname(psd_path), new_filename)
                     img.save(filename=png_path)
                     success = True
@@ -75,7 +89,14 @@ def process_single_psd(psd_path, out_path, use_recycle_bin=True):
             # 如果使用psd-tools成功，需要保存文件
             if 'composed' in locals():
                 filename = os.path.splitext(os.path.basename(psd_path))[0]
-                new_filename = f"{filename}[PSD].png"
+                # Avoid adding [PSD] if it's already from a temp file
+                if not filename.endswith('.temp_intermediate'):
+                    new_filename = f"{filename}[PSD].png"
+                else:
+                    # Use the original base name for the final PNG
+                    original_base_name = filename.replace('.temp_intermediate', '')
+                    new_filename = f"{original_base_name}[CLIP].png"
+
                 png_path = os.path.join(os.path.dirname(psd_path), new_filename)
                 composed.save(png_path, 
                     format='PNG',
@@ -88,8 +109,13 @@ def process_single_psd(psd_path, out_path, use_recycle_bin=True):
                 send2trash.send2trash(psd_path)
                 logging.info(f"成功转换并移至回收站: {psd_path}")
             else:
-                os.remove(psd_path)
-                logging.info(f"成功转换并直接删除: {psd_path}")
+                # Only remove if not specifically told to keep (e.g., temp files handled later)
+                # This logic is now handled in convert_clip_via_psd for temp files
+                if not psd_path.endswith('.temp_intermediate.psd'):
+                    os.remove(psd_path)
+                    logging.info(f"成功转换并直接删除: {psd_path}")
+                else:
+                    logging.info(f"成功转换临时PSD: {psd_path} (将在之后清理)")
             return True
         else:
             # 记录所有尝试过的方法的错误信息
@@ -229,138 +255,147 @@ def convert_pdf_files(directory):
             else:
                 pbar.set_description(f"转换失败: {pdf_file.name}")
 
-def convert_clip_to_images(clip_path, use_recycle_bin=True):
+def convert_clip_via_psd(clip_path, use_recycle_bin=True):
     """
-    转换CLIP文件为PNG图像
-    
+    通过先转换为PSD，再将CLIP文件转换为PNG图像。
+
     参数:
     clip_path -- CLIP文件路径
     use_recycle_bin -- 是否使用回收站删除原文件
-    
+
     返回:
     bool -- 转换是否成功
     """
+    temp_psd_path = None # 初始化以用于错误处理
     try:
-        success = False
-        error_messages = []
-        
-        # 获取临时文件路径
-        clip_file_name = os.path.basename(clip_path)
-        output_file_name = os.path.splitext(clip_file_name)[0] + "[CLIP].png"
-        png_path = os.path.join(os.path.dirname(clip_path), output_file_name)
-        
-        # 方法1: 尝试使用wand/ImageMagick转换
-        try:
-            from wand.image import Image
-            with Image(filename=clip_path) as img:
-                # 设置格式和色彩空间
-                img.format = 'png'
-                img.colorspace = 'rgb'
-                img.save(filename=png_path)
-                success = True
-                logging.info(f"使用Wand成功转换CLIP文件: {clip_path}")
-        except Exception as e:
-            error_messages.append(f"Wand转换失败: {e}")
-            
-        # 方法2: 尝试使用ImageMagick命令行工具转换 - 使用二进制模式避免编码问题
-        if not success:
+        clip_dir = os.path.dirname(clip_path)
+        clip_filename_no_ext = os.path.splitext(os.path.basename(clip_path))[0]
+        # 创建一个临时的PSD文件名
+        temp_psd_filename = f"{clip_filename_no_ext}.temp_intermediate.psd"
+        temp_psd_path = os.path.join(clip_dir, temp_psd_filename)
+
+        logging.info(f"开始转换 CLIP -> PSD: {clip_path} -> {temp_psd_path}")
+
+        # 检查 clip_to_psd.py 脚本是否存在
+        if not os.path.exists(CLIP_TO_PSD_SCRIPT_PATH):
+            logging.error(f"转换脚本未找到: {CLIP_TO_PSD_SCRIPT_PATH}")
+            return False
+
+        # 构建执行脚本的命令
+        # 使用 sys.executable 保证使用当前环境的 Python 解释器
+        python_executable = sys.executable
+        cmd = [
+            python_executable,
+            CLIP_TO_PSD_SCRIPT_PATH,
+            clip_path,
+            "-o", temp_psd_path,
+            # 可以根据需要添加 clip_to_psd.py 的其他参数，例如 --psd-version 1
+        ]
+
+        # 执行 clip_to_psd.py 脚本
+        logging.debug(f"执行命令: {' '.join(cmd)}")
+        result = subprocess.run(
+            cmd,
+            capture_output=True, # 捕获标准输出和标准错误
+            text=False,          # 以字节形式捕获输出/错误
+            creationflags=subprocess.CREATE_NO_WINDOW, # 在Windows上不显示命令行窗口
+            check=False          # 手动检查返回码，不自动抛出异常
+        )
+
+        # 检查脚本执行结果
+        if result.returncode != 0:
             try:
-                cmd = [
-                    'magick',
-                    'convert',
-                    clip_path,
-                    '-quality', '100',
-                    png_path
-                ]
-                
-                # 使用subprocess时不捕获文本输出，避免编码问题
-                result = subprocess.run(
-                    cmd, 
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    creationflags=subprocess.CREATE_NO_WINDOW,  # 防止命令窗口闪现
-                    shell=False  # 避免使用shell，减少编码问题
-                )
-                
-                if result.returncode == 0:
-                    success = True
-                    logging.info(f"使用ImageMagick命令行工具成功转换CLIP文件: {clip_path}")
-                else:
-                    # 尝试以二进制方式记录错误信息
-                    try:
-                        err_msg = result.stderr.decode('utf-8', errors='ignore')
-                    except:
-                        err_msg = "无法解码错误信息"
-                    error_messages.append(f"ImageMagick命令行转换失败，返回码: {result.returncode}, 错误: {err_msg}")
-            except Exception as e:
-                error_messages.append(f"ImageMagick命令行处理失败: {e}")
-                
-        # 方法3: 尝试使用系统自带的clip viewer (如果可用)
-        if not success:
-            try:
-                import tempfile
-                # 创建临时批处理文件，避免路径中的特殊字符问题
-                with tempfile.NamedTemporaryFile(suffix='.bat', delete=False, mode='w', encoding='utf-8') as bat_file:
-                    bat_file.write(f'@echo off\ncd /d "{os.path.dirname(clip_path)}"\n')
-                    bat_file.write(f'magick "{clip_file_name}" "{output_file_name}"\n')
-                
-                # 执行批处理文件
-                result = subprocess.run(
-                    bat_file.name, 
-                    shell=True,
-                    creationflags=subprocess.CREATE_NO_WINDOW
-                )
-                
-                # 删除临时批处理文件
+                # 尝试解码 stderr
+                stderr_output = result.stderr.decode(sys.stderr.encoding or 'utf-8', errors='ignore')
+            except Exception:
+                stderr_output = "(无法解码 stderr)"
+            logging.error(f"clip_to_psd.py 脚本执行失败: {clip_path}")
+            logging.error(f"返回码: {result.returncode}")
+            logging.error(f"错误输出:\n{stderr_output}")
+            # 如果脚本失败，尝试删除可能已创建的临时PSD文件
+            if os.path.exists(temp_psd_path):
                 try:
-                    os.unlink(bat_file.name)
-                except:
-                    pass
-                
-                # 检查转换后文件是否存在
-                if os.path.exists(png_path) and os.path.getsize(png_path) > 0:
-                    success = True
-                    logging.info(f"使用批处理文件成功转换CLIP文件: {clip_path}")
-            except Exception as e:
-                error_messages.append(f"批处理转换方法失败: {e}")
-        
-        # 如果转换成功，根据设置决定删除方式
-        if success:
+                    os.remove(temp_psd_path)
+                except Exception as e:
+                    logging.warning(f"删除失败的临时PSD文件时出错 {temp_psd_path}: {e}")
+            return False
+
+        # 检查临时PSD文件是否真的被创建了
+        if not os.path.exists(temp_psd_path):
+            logging.error(f"clip_to_psd.py 脚本执行成功，但未找到输出文件: {temp_psd_path}")
+            return False
+
+        logging.info(f"成功转换 CLIP -> PSD: {temp_psd_path}")
+
+        # --- PSD -> PNG 转换 ---
+        logging.info(f"开始转换 PSD -> PNG: {temp_psd_path}")
+        # 调用现有的 process_single_psd 函数处理临时PSD文件
+        # 注意：这里将 use_recycle_bin 设置为 False，因为我们想手动删除临时PSD
+        psd_to_png_success = process_single_psd(temp_psd_path, clip_dir, use_recycle_bin=False)
+
+        # --- 清理 ---
+        # 无论 PSD -> PNG 是否成功，都尝试删除临时的 PSD 文件
+        try:
+            os.remove(temp_psd_path)
+            logging.info(f"已删除临时PSD文件: {temp_psd_path}")
+        except Exception as e:
+            # 如果删除失败，记录警告，但这不应阻止后续流程
+            logging.warning(f"删除临时PSD文件失败 {temp_psd_path}: {e}")
+
+        # 检查 PSD -> PNG 的转换结果
+        if not psd_to_png_success:
+            logging.error(f"从临时PSD转换到PNG失败: {temp_psd_path}")
+            # 即使PNG转换失败，CLIP到PSD的步骤是成功的，但整体目标未达成
+            return False
+
+        # --- 处理原始 CLIP 文件 ---
+        # 如果 PSD -> PNG 成功，处理原始的 CLIP 文件
+        logging.info(f"成功完成 PSD -> PNG 转换，源文件: {clip_path}")
+        try:
             if use_recycle_bin:
                 send2trash.send2trash(clip_path)
-                logging.info(f"成功转换并移至回收站: {clip_path}")
+                logging.info(f"原始CLIP文件已移至回收站: {clip_path}")
             else:
                 os.remove(clip_path)
-                logging.info(f"成功转换并直接删除: {clip_path}")
-            return True
-        else:
-            for error in error_messages:
-                logging.error(f"{clip_path}: {error}")
-            logging.error(f"无法转换CLIP文件: {clip_path}")
-            return False
-            
+                logging.info(f"原始CLIP文件已删除: {clip_path}")
+            return True # 整个流程成功
+        except Exception as e:
+            logging.error(f"处理原始CLIP文件失败 {clip_path}: {e}")
+            return False # 清理原始文件失败
+
     except Exception as e:
-        logging.error(f"处理CLIP文件时出错 {clip_path}: {str(e)}")
+        logging.error(f"处理CLIP文件时发生意外错误 {clip_path}: {e}", exc_info=True)
+        # 发生意外时，也尝试清理临时PSD文件
+        if temp_psd_path and os.path.exists(temp_psd_path):
+             try:
+                 os.remove(temp_psd_path)
+                 logging.info(f"错误处理中：已删除临时PSD文件: {temp_psd_path}")
+             except Exception as cleanup_e:
+                 logging.warning(f"错误处理中：删除临时PSD文件失败 {temp_psd_path}: {cleanup_e}")
         return False
 
+
 def convert_clip_files(directory, use_recycle_bin=True):
-    """转换目录中的所有CLIP文件"""
+    """转换目录中的所有CLIP文件 (通过先转为PSD)"""
     directory = Path(directory)
     clip_files = list(directory.rglob('*.clip'))
-    
+
     if not clip_files:
         logging.info(f"在 {directory} 中没有找到CLIP文件")
         return
-    
-    logging.info(f"找到 {len(clip_files)} 个CLIP文件准备转换")
-    
-    with tqdm(total=len(clip_files), desc="转换CLIP文件") as pbar:
+
+    logging.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")
+
+    # 使用 tqdm 显示进度
+    with tqdm(total=len(clip_files), desc="转换CLIP文件 (via PSD)") as pbar:
         for clip_file in clip_files:
-            success = convert_clip_to_images(str(clip_file), use_recycle_bin)
-            pbar.update(1)
+            # 调用新的转换函数
+            success = convert_clip_via_psd(str(clip_file), use_recycle_bin)
+            pbar.update(1) # 更新进度条
+            # 更新进度条描述
             if success:
-                pbar.set_description(f"成功转换: {clip_file.name}")
+                pbar.set_description(f"成功: {clip_file.name}")
             else:
-                pbar.set_description(f"转换失败: {clip_file.name}")
-    
+                pbar.set_description(f"失败: {clip_file.name}")
+
     logging.info(f"CLIP文件转换完成")
