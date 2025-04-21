@@ -178,7 +178,7 @@ def main():
     # 修改控制开关部分
     EXECUTE_DELETE = True      # 是否执行删除操作
     EXECUTE_ORGANIZE = True    # 是否执行整理操作
-    EXECUTE_EXTRACT = True     # 是否执行解压操作
+    EXECUTE_EXTRACT = False     # 是否执行解压操作
     DELETE_ARCHIVES = not args.keep_archives  # 是否删除原始压缩文件
     PSD_HANDLING = 'convert'   # 'delete': 直接删除PSD, 'convert': 转换为PNG, 'keep': 保留PSD
     PDF_HANDLING = 'convert'   # 'delete': 直接删除PDF, 'convert': 转换为PNG, 'keep': 保留PDF
