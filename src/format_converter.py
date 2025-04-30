@@ -15,9 +15,10 @@ TARGET_FORMATS = ['.psd', '.pdf', '.clip']
 
 # 定义 clip_to_psd.py 脚本的路径
 # __file__ 是当前脚本(format_converter.py)的路径
-# 我们需要向上两级到 src/projects/PsdConvert/，然后进入 tool/clip_to_psd/
+# 新的路径结构: src/tool/clip_to_psd/clip_to_psd.py
 _current_dir = os.path.dirname(os.path.abspath(__file__))
-CLIP_TO_PSD_SCRIPT_PATH = os.path.abspath(os.path.join(_current_dir, '..', 'tool', 'clip_to_psd', 'clip_to_psd.py'))
+# 从 src/format_converter.py 到 src/tool/clip_to_psd/clip_to_psd.py
+CLIP_TO_PSD_SCRIPT_PATH = os.path.abspath(os.path.join(_current_dir, 'tool', 'clip_to_psd', 'clip_to_psd.py'))
 
 def process_single_psd(psd_path, out_path, use_recycle_bin=True):
     """

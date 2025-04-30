@@ -1,0 +1,42 @@
+[project]
+name = "psdconvert"
+version = "0.1.0"
+description = "工具用于转换各种图像格式文件，特别是PSD、PDF和CLIP文件到PNG格式"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "Pillow>=10.0.0",
+    "pillow-avif-plugin>=1.4.6",
+    "pillow-jxl-plugin>=1.3.2",
+    "psd-tools",
+    "tqdm>=4.65.0",
+    "send2trash>=1.8.0",
+    "pyperclip>=1.8.2",
+    "psutil>=5.9.0",
+    "PyMuPDF>=1.22.0",
+    "wand>=0.6.11",
+    "fitz"
+
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.3.1",
+    "black>=23.3.0",
+    "isort>=5.12.0",
+]
+
+[build-system]
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[project.scripts]
+psdconvert = "main:main"
