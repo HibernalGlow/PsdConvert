@@ -10,6 +10,7 @@ import pyperclip
 import argparse
 import zipfile
 import psutil
+import json
 from multiprocessing import Pool, cpu_count
 
 # 导入自定义模块
@@ -94,9 +95,9 @@ def delete_files_by_extensions(directory, extensions):
                 file_path = os.path.join(root, file)
                 try:
                     os.remove(file_path)
-                    logger.info(f"Deleted file: {file_path}")
+                    logger.info(f"已删除文件: {file_path}")
                 except Exception as e:
-                    logger.error(f"Error deleting file {file_path}: {e}")
+                    logger.error(f"删除文件出错 {file_path}: {e}")
 
 def delete_empty_folders(directory):
     """
@@ -111,9 +112,9 @@ def delete_empty_folders(directory):
             if not os.listdir(dir_path):
                 try:
                     os.rmdir(dir_path)
-                    logger.info(f"Deleted empty directory: {dir_path}")
+                    logger.info(f"已删除空目录: {dir_path}")
                 except Exception as e:
-                    logger.error(f"Error deleting directory {dir_path}: {e}")
+                    logger.error(f"删除目录出错 {dir_path}: {e}")
 
 def delete_folders_by_keywords(directory, keywords):
     """
@@ -129,9 +130,9 @@ def delete_folders_by_keywords(directory, keywords):
                 dir_path = os.path.join(root, dir)
                 try:
                     shutil.rmtree(dir_path)
-                    logger.info(f"Deleted directory containing keyword: {dir_path}")
+                    logger.info(f"已删除包含关键词的目录: {dir_path}")
                 except Exception as e:
-                    logger.error(f"Error deleting directory {dir_path}: {e}")
+                    logger.error(f"删除目录出错 {dir_path}: {e}")
 
 def organize_media_files(source_path, target_base_path):
     """
@@ -192,27 +193,140 @@ def organize_media_files(source_path, target_base_path):
             except Exception as e:
                 logger.error(f"删除空文件夹时出错 {dir_path}: {e}")
 
+def load_config(config_path='config.json'):
+    """
+    加载配置文件
+    
+    参数:
+    config_path -- 配置文件路径
+    
+    返回:
+    配置字典
+    """
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        logger.info(f"配置文件加载成功: {config_path}")
+        return config
+    except Exception as e:
+        logger.error(f"加载配置文件出错: {e}")
+        logger.info("使用默认配置")
+        return {
+            "execution": {
+                "delete": True,
+                "organize": False,
+                "extract": False
+            },
+            "files": {
+                "psd_handling": "convert",
+                "pdf_handling": "convert",
+                "clip_handling": "convert",
+                "use_recycle_bin": False,
+                "delete_archives": True
+            },
+            "delete_config": {
+                "extensions": ["txt", "js", "url", "htm", "html", "docx"],
+                "keywords": ["進捗", "宣伝", "同人誌", "予告", "新刊"]
+            }
+        }
+
+def process_directory(directory, config, custom_target_formats):
+    """
+    处理单个目录的所有操作
+    
+    参数:
+    directory -- 目标目录路径
+    config -- 配置字典
+    custom_target_formats -- 自定义目标格式列表
+    """
+    logger.info(f"正在处理目录: {directory}")
+    try:
+        # 执行解压操作
+        if config["execution"]["extract"]:
+            logger.info("=== 检查是否需要递归解压所有压缩文件 ===")
+            # 询问用户是否需要递归解压
+            print(f"\n是否要递归解压目录 '{directory}' 中的所有压缩文件?")
+            print("1. 是")
+            print("2. 否")
+            while True:
+                choice = input("请选择 (1/2): ").strip()
+                if choice == '1':
+                    logger.info("=== 开始递归解压所有压缩文件 ===")
+                    extract_all_archives_recursive(
+                        directory, 
+                        delete_original=config["files"]["delete_archives"], 
+                        target_formats=custom_target_formats
+                    )
+                    break
+                elif choice == '2':
+                    logger.info("=== 跳过递归解压操作 ===")
+                    break
+                else:
+                    print("无效的选项，请重新输入")
+        
+        # 处理PSD文件
+        if config["files"]["psd_handling"] == 'convert':
+            logger.info("=== 开始转换PSD文件 ===")
+            convert_psd_files(directory, config["files"]["use_recycle_bin"])
+        
+        # 处理PDF文件
+        if config["files"]["pdf_handling"] == 'convert':
+            logger.info("=== 开始转换PDF文件 ===")
+            convert_pdf_files(directory)
+        
+        # 处理CLIP文件
+        if config["files"]["clip_handling"] == 'convert':
+            logger.info("=== 开始转换CLIP文件 ===")
+            convert_clip_files(directory, config["files"]["use_recycle_bin"])
+        
+        # 构建需要删除的文件扩展名列表
+        delete_extensions = config["delete_config"]["extensions"].copy()
+        if config["files"]["psd_handling"] == 'delete':
+            delete_extensions.append('psd')
+        if config["files"]["pdf_handling"] == 'delete':
+            delete_extensions.append('pdf')
+        if config["files"]["clip_handling"] == 'delete':
+            delete_extensions.append('clip')
+            
+        # 执行删除操作
+        if config["execution"]["delete"]:
+            logger.info("=== 开始删除不需要的文件和文件夹 ===")
+            delete_files_by_extensions(directory, delete_extensions)
+            delete_empty_folders(directory)
+            delete_folders_by_keywords(directory, config["delete_config"]["keywords"])
+        
+        # 执行整理操作
+        if config["execution"]["organize"]:
+            logger.info("=== 开始整理媒体文件 ===")
+            organize_media_files(directory, directory)
+        
+        logger.info(f"目录 {directory} 处理完成")
+    except Exception as e:
+        logger.error(f"处理目录 {directory} 时出错: {str(e)}")
+        logger.error(f"处理目录 {directory} 时发生错误，继续处理下一个目录")
+
 def main():
-    """主函数修改"""
+    """主函数：处理用户输入和配置，调用其他函数执行实际操作"""
     # 添加命令行参数解析
     parser = argparse.ArgumentParser(description='文件处理工具')
     parser.add_argument('--clipboard', action='store_true', help='从剪贴板读取路径')
     parser.add_argument('--keep-archives', action='store_true', help='保留原始压缩文件不删除')
+    parser.add_argument('--config', default='config.json', help='指定配置文件路径')
     parser.add_argument('--formats', default=','.join(TARGET_FORMATS), 
-                      help=f'待处理的目标文件格式，逗号分隔，例如: {",".join(TARGET_FORMATS)}')
+                       help=f'待处理的目标文件格式，逗号分隔，例如: {",".join(TARGET_FORMATS)}')
     args = parser.parse_args()
     
     # 获取目录路径
     if args.clipboard:
         input_text = pyperclip.paste()
     else:
-        print("请一次性粘贴所有目录路径（每行一个路径，最后输入空行结束）:")  # 保留这个print用于交互提示
+        print("请一次性粘贴所有目录路径（每行一个路径，最后输入空行结束）:")
         input_text = ""
         while True:
             line = input()
             if not line:
                 break
-            input_text += line + ""
+            input_text += line + "\n"
 
     # 处理输入的路径
     directories = []
@@ -228,83 +342,19 @@ def main():
         logger.warning("未输入有效路径，程序退出")
         return
     
-    # 修改控制开关部分
-    EXECUTE_DELETE = True      # 是否执行删除操作
-    EXECUTE_ORGANIZE = True    # 是否执行整理操作
-    EXECUTE_EXTRACT = False     # 是否执行解压操作
-    DELETE_ARCHIVES = not args.keep_archives  # 是否删除原始压缩文件
-    PSD_HANDLING = 'convert'   # 'delete': 直接删除PSD, 'convert': 转换为PNG, 'keep': 保留PSD
-    PDF_HANDLING = 'convert'   # 'delete': 直接删除PDF, 'convert': 转换为PNG, 'keep': 保留PDF
-    USE_RECYCLE_BIN = False    # 转换PSD后是否使用回收站删除原文件
+    # 加载配置文件
+    config = load_config(args.config)
     
-    # 处理CLIP文件
-    CLIP_HANDLING = 'convert'  # 'delete': 直接删除CLIP, 'convert': 转换为PNG, 'keep': 保留CLIP
-
+    # 如果命令行指定了保留压缩文件，覆盖配置文件中的设置
+    if args.keep_archives:
+        config["files"]["delete_archives"] = False
+    
     # 解析目标文件格式
     custom_target_formats = [f.strip() for f in args.formats.split(',')]
     
-    # 删除操作配置
-    extensions = ['txt', 'js', 'url', 'htm', 'html', 'docx', 'sai2']
-    keywords = ['進捗', '宣伝', '同人誌', '予告', '新刊']
-    if PSD_HANDLING == 'delete':
-        extensions.append('psd')
-    if PDF_HANDLING == 'delete':
-        extensions.append('pdf')
-    if CLIP_HANDLING == 'delete':
-        extensions.append('clip')
-    
-    # 对每个目录执行操作
+    # 为每个目录执行处理操作
     for directory in directories:
-        logger.info(f"正在处理目录: {directory}")
-        try:
-            # 执行解压操作
-            if EXECUTE_EXTRACT:
-                logger.info("=== 检查是否需要递归解压所有压缩文件 ===")
-                # 询问用户是否需要递归解压
-                print(f"\n是否要递归解压目录 '{directory}' 中的所有压缩文件?")
-                print("1. 是")
-                print("2. 否")
-                while True:
-                    choice = input("请选择 (1/2): ").strip()
-                    if choice == '1':
-                        logger.info("=== 开始递归解压所有压缩文件 ===")
-                        extract_all_archives_recursive(directory, delete_original=DELETE_ARCHIVES, target_formats=custom_target_formats)
-                        break
-                    elif choice == '2':
-                        logger.info("=== 跳过递归解压操作 ===")
-                        break
-                    else:
-                        print("无效的选项，请重新输入")
-                
-            # 处理PSD文件
-            if PSD_HANDLING == 'convert':
-                logger.info("=== 开始转换PSD文件 ===")
-                convert_psd_files(directory, USE_RECYCLE_BIN)
-            # 处理PDF文件
-            if PDF_HANDLING == 'convert':
-                logger.info("=== 开始转换PDF文件 ===")
-                convert_pdf_files(directory)
-            # 处理CLIP文件
-            if CLIP_HANDLING == 'convert':
-                logger.info("=== 开始转换CLIP文件 ===")
-                convert_clip_files(directory, USE_RECYCLE_BIN)
-            # 执行删除操作
-            if EXECUTE_DELETE:
-                logger.info("=== 开始删除不需要的文件和文件夹 ===")
-                delete_files_by_extensions(directory, extensions)
-                delete_empty_folders(directory)
-                delete_folders_by_keywords(directory, keywords)
-            
-            # 执行整理操作
-            if EXECUTE_ORGANIZE:
-                logger.info("=== 开始整理媒体文件 ===")
-                organize_media_files(directory, directory)
-            
-            logger.info(f"目录 {directory} 处理完成")
-        except Exception as e:
-            logger.error(f"处理目录 {directory} 时出错: {str(e)}")
-            logger.error(f"处理目录 {directory} 时发生错误，继续处理下一个目录")
-            continue
+        process_directory(directory, config, custom_target_formats)
     
     logger.info("所有操作已完成")
 
