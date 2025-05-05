@@ -15,7 +15,13 @@ dependencies = [
     "psutil>=5.9.0",
     "PyMuPDF>=1.22.0",
     "wand>=0.6.11",
-    "fitz"
+    "fitz",
+    "loguru",
+    "send2trash",
+    "pyperclip",
+    "psutil",
+    "loguru",
+    "send2trash"
 
 ]
 
