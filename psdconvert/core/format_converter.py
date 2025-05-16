@@ -1,7 +1,6 @@
 import os
 import sys # 添加 sys 模块导入
 from pathlib import Path
-import logging
 from PIL import Image
 from psd_tools import PSDImage
 import send2trash
@@ -9,16 +8,13 @@ from multiprocessing import Pool, cpu_count
 from tqdm import tqdm
 import subprocess
 import psutil
-
+import traceback
+from loguru import logger
 # 支持的目标格式
 TARGET_FORMATS = ['.psd', '.pdf', '.clip']
 
-# 定义 clip_to_psd.py 脚本的路径
-# __file__ 是当前脚本(format_converter.py)的路径
-# 新的路径结构: src/tool/clip_to_psd/clip_to_psd.py
-_current_dir = os.path.dirname(os.path.abspath(__file__))
-# 从 src/format_converter.py 到 src/tool/clip_to_psd/clip_to_psd.py
-CLIP_TO_PSD_SCRIPT_PATH = os.path.abspath(os.path.join(_current_dir, 'tool', 'clip_to_psd', 'clip_to_psd.py'))
+# 不再需要导入clip_to_psd包
+# 直接通过subprocess调用命令行程序
 
 def process_single_psd(psd_path, out_path, use_recycle_bin=True):
     """
@@ -39,13 +35,13 @@ def process_single_psd(psd_path, out_path, use_recycle_bin=True):
             # 检测并输出原始色深信息
             bit_depth = psd.depth
             channels = len(psd.channels)
-            logging.info(f"原始PSD信息：")
-            logging.info(f"- 色深: {bit_depth}位/通道")
-            logging.info(f"- 通道数: {channels}")
+            logger.info(f"原始PSD信息：")
+            logger.info(f"- 色深: {bit_depth}位/通道")
+            logger.info(f"- 通道数: {channels}")
             
             # 根据色深决定转换策略
             if bit_depth > 16:
-                logging.warning("警告：原始PSD色深超过16位/通道，转换为PNG可能会损失色彩信息")
+                logger.warning("警告：原始PSD色深超过16位/通道，转换为PNG可能会损失色彩信息")
                 # 这里可以添加是否继续的询问
                 
             composed = psd.composite()
@@ -108,24 +104,24 @@ def process_single_psd(psd_path, out_path, use_recycle_bin=True):
             # 转换成功后，根据设置决定删除方式
             if use_recycle_bin:
                 send2trash.send2trash(psd_path)
-                logging.info(f"成功转换并移至回收站: {psd_path}")
+                logger.info(f"成功转换并移至回收站: {psd_path}")
             else:
                 # Only remove if not specifically told to keep (e.g., temp files handled later)
                 # This logic is now handled in convert_clip_via_psd for temp files
                 if not psd_path.endswith('.temp_intermediate.psd'):
                     os.remove(psd_path)
-                    logging.info(f"成功转换并直接删除: {psd_path}")
+                    logger.info(f"成功转换并直接删除: {psd_path}")
                 else:
-                    logging.info(f"成功转换临时PSD: {psd_path} (将在之后清理)")
+                    logger.info(f"成功转换临时PSD: {psd_path} (将在之后清理)")
             return True
         else:
             # 记录所有尝试过的方法的错误信息
             for error in error_messages:
-                logging.error(f"{psd_path}: {error}")
+                logger.error(f"{psd_path}: {error}")
             return False
 
     except Exception as e:
-        logging.error(f"处理文件时发生错误 {psd_path}: {str(e)}")
+        logger.error(f"处理文件时发生错误 {psd_path}: {str(e)}")
         return False
 
 def process_psd_wrapper(args):
@@ -146,7 +142,7 @@ def convert_psd_files(directory, use_recycle_bin=True):
     # 检查内存使用情况
     memory_percent = psutil.virtual_memory().percent
     if memory_percent > 90:
-        logging.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
+        logger.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
         num_processes = 1
     else:
         num_processes = max(8, cpu_count() - 1)  # 保留一个CPU核心
@@ -180,13 +176,13 @@ def convert_pdf_to_images(pdf_path):
         try:
             import fitz
         except ImportError as e:
-            logging.error(f"PyMuPDF (fitz)库导入失败: {e}")
-            logging.error("请安装PyMuPDF: pip install PyMuPDF")
+            logger.error(f"PyMuPDF (fitz)库导入失败: {e}")
+            logger.error("请安装PyMuPDF: pip install PyMuPDF")
             return False
 
         # 检查文件是否存在和可访问
         if not os.path.exists(pdf_path):
-            logging.error(f"PDF文件不存在: {pdf_path}")
+            logger.error(f"PDF文件不存在: {pdf_path}")
             return False
 
         # 创建输出目录
@@ -194,15 +190,15 @@ def convert_pdf_to_images(pdf_path):
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
-            logging.error(f"创建输出目录失败: {e}")
+            logger.error(f"创建输出目录失败: {e}")
             return False
         
         # 打开PDF文件
         try:
             doc = fitz.open(pdf_path)
-            logging.info(f"PDF信息: 页数={doc.page_count}")
+            logger.info(f"PDF信息: 页数={doc.page_count}")
         except Exception as e:
-            logging.error(f"打开PDF文件失败: {e}")
+            logger.error(f"打开PDF文件失败: {e}")
             return False
 
         # 转换每一页
@@ -217,9 +213,9 @@ def convert_pdf_to_images(pdf_path):
                 # 保存图像
                 image_path = os.path.join(output_dir, f'page_{page_num + 1}.png')
                 pix.save(image_path)
-                logging.info(f"成功保存第 {page_num + 1} 页到 {image_path}")
+                logger.info(f"成功保存第 {page_num + 1} 页到 {image_path}")
             except Exception as e:
-                logging.error(f"处理第 {page_num + 1} 页时出错: {e}")
+                logger.error(f"处理第 {page_num + 1} 页时出错: {e}")
                 continue
 
         # 关闭PDF文档
@@ -228,14 +224,14 @@ def convert_pdf_to_images(pdf_path):
         # 转换完成后将PDF移到回收站
         try:
             send2trash.send2trash(pdf_path)
-            logging.info(f"成功转换PDF并移除: {pdf_path}")
+            logger.info(f"成功转换PDF并移除: {pdf_path}")
             return True
         except Exception as e:
-            logging.error(f"移动PDF到回收站失败: {e}")
+            logger.error(f"移动PDF到回收站失败: {e}")
             return False
         
     except Exception as e:
-        logging.error(f"处理PDF文件时出错 {pdf_path}: {e}")
+        logger.error(f"处理PDF文件时出错 {pdf_path}: {e}")
         return False
 
 def convert_pdf_files(directory):
@@ -275,61 +271,70 @@ def convert_clip_via_psd(clip_path, use_recycle_bin=True):
         temp_psd_filename = f"{clip_filename_no_ext}.temp_intermediate.psd"
         temp_psd_path = os.path.join(clip_dir, temp_psd_filename)
 
-        logging.info(f"开始转换 CLIP -> PSD: {clip_path} -> {temp_psd_path}")
-
-        # 检查 clip_to_psd.py 脚本是否存在
-        if not os.path.exists(CLIP_TO_PSD_SCRIPT_PATH):
-            logging.error(f"转换脚本未找到: {CLIP_TO_PSD_SCRIPT_PATH}")
-            return False
-
-        # 构建执行脚本的命令
-        # 使用 sys.executable 保证使用当前环境的 Python 解释器
-        python_executable = sys.executable
-        cmd = [
-            python_executable,
-            CLIP_TO_PSD_SCRIPT_PATH,
-            clip_path,
-            "-o", temp_psd_path,
-            # 可以根据需要添加 clip_to_psd.py 的其他参数，例如 --psd-version 1
-        ]
-
-        # 执行 clip_to_psd.py 脚本
-        logging.debug(f"执行命令: {' '.join(cmd)}")
-        result = subprocess.run(
-            cmd,
-            capture_output=True, # 捕获标准输出和标准错误
-            text=False,          # 以字节形式捕获输出/错误
-            creationflags=subprocess.CREATE_NO_WINDOW, # 在Windows上不显示命令行窗口
-            check=False          # 手动检查返回码，不自动抛出异常
-        )
-
-        # 检查脚本执行结果
-        if result.returncode != 0:
-            try:
-                # 尝试解码 stderr
-                stderr_output = result.stderr.decode(sys.stderr.encoding or 'utf-8', errors='ignore')
-            except Exception:
-                stderr_output = "(无法解码 stderr)"
-            logging.error(f"clip_to_psd.py 脚本执行失败: {clip_path}")
-            logging.error(f"返回码: {result.returncode}")
-            logging.error(f"错误输出:\n{stderr_output}")
-            # 如果脚本失败，尝试删除可能已创建的临时PSD文件
+        logger.info(f"开始转换 CLIP -> PSD: {clip_path} -> {temp_psd_path}")
+        
+        # 使用子进程直接调用clip_to_psd命令行工具
+        try:
+            logger.debug(f"开始使用clip_to_psd命令转换: {clip_path} -> {temp_psd_path}")
+            
+            # 构建命令参数
+            cmd = [
+                "clip_to_psd",  # 直接使用包名作为命令
+                f'"{clip_path}"',  # 使用引号包裹路径，防止路径中的空格等特殊字符
+                "-o", f'"{temp_psd_path}"'  # 输出PSD文件
+                # 可以根据需要添加其他参数，例如 --psd-version 1
+            ]
+            
+            # 组合命令行参数为字符串
+            cmd_str = " ".join(cmd)
+            logger.debug(f"执行命令: {cmd_str}")
+            
+            # 执行命令
+            result = subprocess.run(
+                cmd_str,  # 使用字符串形式传递命令
+                shell=True,  # 使用shell执行
+                capture_output=True,  # 捕获输出
+                text=True,  # 将输出作为文本返回
+                check=False  # 不自动抛出异常
+            )
+            
+            # 检查执行结果
+            if result.returncode == 0:
+                logger.debug("clip_to_psd命令执行成功")
+                conversion_success = True
+            else:
+                logger.error(f"clip_to_psd命令执行失败: {clip_path}")
+                logger.error(f"返回码: {result.returncode}")
+                logger.error(f"错误输出: {result.stderr}")
+                conversion_success = False
+                
+            if not conversion_success:
+                # 如果转换失败，尝试删除可能已创建的临时PSD文件
+                if os.path.exists(temp_psd_path):
+                    try:
+                        os.remove(temp_psd_path)
+                    except Exception as e:
+                        logger.warning(f"删除失败的临时PSD文件时出错 {temp_psd_path}: {e}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"调用clip_to_psd命令时出错: {str(e)}")
+            # 如果出错，尝试删除可能已创建的临时PSD文件
             if os.path.exists(temp_psd_path):
                 try:
                     os.remove(temp_psd_path)
-                except Exception as e:
-                    logging.warning(f"删除失败的临时PSD文件时出错 {temp_psd_path}: {e}")
+                except Exception as cleanup_e:
+                    logger.warning(f"删除失败的临时PSD文件时出错 {temp_psd_path}: {cleanup_e}")
             return False
-
-        # 检查临时PSD文件是否真的被创建了
+              # 检查临时PSD文件是否真的被创建了
         if not os.path.exists(temp_psd_path):
-            logging.error(f"clip_to_psd.py 脚本执行成功，但未找到输出文件: {temp_psd_path}")
+            logger.error(f"clip_to_psd命令执行成功，但未找到输出文件: {temp_psd_path}")
             return False
 
-        logging.info(f"成功转换 CLIP -> PSD: {temp_psd_path}")
+        logger.info(f"成功转换 CLIP -> PSD: {temp_psd_path}")
 
         # --- PSD -> PNG 转换 ---
-        logging.info(f"开始转换 PSD -> PNG: {temp_psd_path}")
+        logger.info(f"开始转换 PSD -> PNG: {temp_psd_path}")
         # 调用现有的 process_single_psd 函数处理临时PSD文件
         # 注意：这里将 use_recycle_bin 设置为 False，因为我们想手动删除临时PSD
         psd_to_png_success = process_single_psd(temp_psd_path, clip_dir, use_recycle_bin=False)
@@ -338,41 +343,41 @@ def convert_clip_via_psd(clip_path, use_recycle_bin=True):
         # 无论 PSD -> PNG 是否成功，都尝试删除临时的 PSD 文件
         try:
             os.remove(temp_psd_path)
-            logging.info(f"已删除临时PSD文件: {temp_psd_path}")
+            logger.info(f"已删除临时PSD文件: {temp_psd_path}")
         except Exception as e:
             # 如果删除失败，记录警告，但这不应阻止后续流程
-            logging.warning(f"删除临时PSD文件失败 {temp_psd_path}: {e}")
+            logger.warning(f"删除临时PSD文件失败 {temp_psd_path}: {e}")
 
         # 检查 PSD -> PNG 的转换结果
         if not psd_to_png_success:
-            logging.error(f"从临时PSD转换到PNG失败: {temp_psd_path}")
+            logger.error(f"从临时PSD转换到PNG失败: {temp_psd_path}")
             # 即使PNG转换失败，CLIP到PSD的步骤是成功的，但整体目标未达成
             return False
 
         # --- 处理原始 CLIP 文件 ---
         # 如果 PSD -> PNG 成功，处理原始的 CLIP 文件
-        logging.info(f"成功完成 PSD -> PNG 转换，源文件: {clip_path}")
+        logger.info(f"成功完成 PSD -> PNG 转换，源文件: {clip_path}")
         try:
             if use_recycle_bin:
                 send2trash.send2trash(clip_path)
-                logging.info(f"原始CLIP文件已移至回收站: {clip_path}")
+                logger.info(f"原始CLIP文件已移至回收站: {clip_path}")
             else:
                 os.remove(clip_path)
-                logging.info(f"原始CLIP文件已删除: {clip_path}")
+                logger.info(f"原始CLIP文件已删除: {clip_path}")
             return True # 整个流程成功
         except Exception as e:
-            logging.error(f"处理原始CLIP文件失败 {clip_path}: {e}")
+            logger.error(f"处理原始CLIP文件失败 {clip_path}: {e}")
             return False # 清理原始文件失败
 
     except Exception as e:
-        logging.error(f"处理CLIP文件时发生意外错误 {clip_path}: {e}", exc_info=True)
+        logger.error(f"处理CLIP文件时发生意外错误 {clip_path}: {e}", exc_info=True)
         # 发生意外时，也尝试清理临时PSD文件
         if temp_psd_path and os.path.exists(temp_psd_path):
              try:
                  os.remove(temp_psd_path)
-                 logging.info(f"错误处理中：已删除临时PSD文件: {temp_psd_path}")
+                 logger.info(f"错误处理中：已删除临时PSD文件: {temp_psd_path}")
              except Exception as cleanup_e:
-                 logging.warning(f"错误处理中：删除临时PSD文件失败 {temp_psd_path}: {cleanup_e}")
+                 logger.warning(f"错误处理中：删除临时PSD文件失败 {temp_psd_path}: {cleanup_e}")
         return False
 
 def process_clip_wrapper(args):
@@ -387,15 +392,15 @@ def convert_clip_files(directory, use_recycle_bin=True):
     clip_files = list(directory.rglob('*.clip'))
 
     if not clip_files:
-        logging.info(f"在 {directory} 中没有找到CLIP文件")
+        logger.info(f"在 {directory} 中没有找到CLIP文件")
         return
 
-    logging.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")
+    logger.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")
 
     # 检查内存使用情况，决定进程数
     memory_percent = psutil.virtual_memory().percent
     if memory_percent > 90:
-        logging.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
+        logger.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
         num_processes = 1
     else:
         # CLIP转换比较耗资源，限制进程数
@@ -417,3 +422,7 @@ def convert_clip_files(directory, use_recycle_bin=True):
 
     success_count = sum(results)
     print(f"\nCLIP文件转换完成: 成功 {success_count}/{len(clip_files)} 个文件")
+    if success_count == 0:
+        logger.info("所有CLIP文件转换失败")
+    else:
+        logger.info(f"成功转换 {success_count} 个CLIP文件")

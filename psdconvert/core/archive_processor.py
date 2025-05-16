@@ -1,7 +1,8 @@
 import os
 import subprocess
 from pathlib import Path
-import logging
+from loguru import logger
+
 # 在调用7-Zip命令前设置环境变量
 os.environ['TMP'] = 'D:/temp'
 os.environ['TEMP'] = 'D:/temp'
@@ -88,7 +89,7 @@ def check_archive_content(archive_path, extensions):
         result = _run_subprocess_with_encoding(cmd)
         
         if result is None:
-            logging.error(f"检查压缩包内容失败: {archive_path}")
+            logger.error(f"检查压缩包内容失败: {archive_path}")
             return False
             
         # 检查输出中是否包含指定扩展名的文件
@@ -105,18 +106,18 @@ def check_archive_content(archive_path, extensions):
         
         if found_files:
             # 打印找到的文件和扩展名，便于调试
-            logging.info(f"在压缩包 {archive_path.name} 中找到以下文件:")
+            logger.info(f"在压缩包 {archive_path.name} 中找到以下文件:")
             for file_path, ext in found_files[:5]:  # 最多显示5个
-                logging.info(f"  - {file_path} ({ext})")
+                logger.info(f"  - {file_path} ({ext})")
             if len(found_files) > 5:
-                logging.info(f"  ... 以及其他 {len(found_files)-5} 个文件")
+                logger.info(f"  ... 以及其他 {len(found_files)-5} 个文件")
             return True
         
-        logging.info(f"压缩包 {archive_path.name} 中未找到指定扩展名的文件")
+        logger.info(f"压缩包 {archive_path.name} 中未找到指定扩展名的文件")
         return False
                 
     except Exception as e:
-        logging.error(f"检查压缩包内容时出错 {archive_path}: {e}")
+        logger.error(f"检查压缩包内容时出错 {archive_path}: {e}")
         return False
 
 # 修复_run_subprocess_with_encoding函数，增强编码处理能力
@@ -134,8 +135,8 @@ def _run_subprocess_with_encoding(cmd, encoding_list=['utf-8', 'cp932', 'gbk', '
         
         # 如果命令执行失败
         if result.returncode != 0:
-            logging.error(f"子进程执行失败，返回码：{result.returncode}")
-            logging.error(f"命令: {' '.join(cmd)}")
+            logger.error(f"子进程执行失败，返回码：{result.returncode}")
+            logger.error(f"命令: {' '.join(cmd)}")
             return None
             
         # 尝试不同的编码解码输出
@@ -147,11 +148,11 @@ def _run_subprocess_with_encoding(cmd, encoding_list=['utf-8', 'cp932', 'gbk', '
                 continue
                 
         # 所有编码都失败了，使用'replace'策略强制解码
-        logging.warning("所有尝试的编码都失败，使用replace策略解码")
+        logger.warning("所有尝试的编码都失败，使用replace策略解码")
         return result.stdout.decode('utf-8', errors='replace')
         
     except Exception as e:
-        logging.error(f"执行子进程时发生错误: {e}")
+        logger.error(f"执行子进程时发生错误: {e}")
         return None
 
 def extract_archive(archive_path, delete_original=True):
@@ -217,11 +218,11 @@ def _run_subprocess_with_encoding(cmd, encoding_list=['utf-8', 'gbk', 'shift-jis
         return result.stdout
     except subprocess.CalledProcessError as e:
         # 处理命令执行失败的情况
-        logging.error(f"子进程执行失败: {e}")
+        logger.error(f"子进程执行失败: {e}")
         if e.stdout:
-            logging.error(f"标准输出: {e.stdout}")
+            logger.error(f"标准输出: {e.stdout}")
         if e.stderr:
-            logging.error(f"错误输出: {e.stderr}")
+            logger.error(f"错误输出: {e.stderr}")
         return None
     except UnicodeDecodeError:
         # 如果utf-8解码失败，尝试其他编码
@@ -237,7 +238,7 @@ def _run_subprocess_with_encoding(cmd, encoding_list=['utf-8', 'gbk', 'shift-jis
         try:
             return result.stdout.decode('utf-8', errors='replace')
         except:
-            logging.error(f"无法解码子进程输出")
+            logger.error(f"无法解码子进程输出")
             return None
 
 # 修改压缩文件检查函数，添加None检查
@@ -285,18 +286,18 @@ def extract_archive(archive_path, output_dir=None, delete_original=False, target
         result = _run_subprocess_with_encoding(cmd)
         
         if result is None:
-            logging.error(f"解压失败: {archive_path}")
+            logger.error(f"解压失败: {archive_path}")
             return None
             
         # 解压成功后，根据参数决定是否删除原压缩文件
         if delete_original:
             os.remove(archive_path)
-            logging.info(f"已解压并删除: {archive_path}")
+            logger.info(f"已解压并删除: {archive_path}")
         else:
-            logging.info(f"已解压: {archive_path}")
+            logger.info(f"已解压: {archive_path}")
             
         return extract_path
             
     except Exception as e:
-        logging.error(f"处理文件时出错 {archive_path}: {e}")
+        logger.error(f"处理文件时出错 {archive_path}: {e}")
         return None
