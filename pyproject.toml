@@ -22,8 +22,9 @@ dependencies = [
     "psutil",
     "loguru",
     "send2trash",
-    "PyMuPDF",
-    "frontend>=0.0.3",
+    "PyMuPDF"
+    
+
 ]
 
 [project.optional-dependencies]

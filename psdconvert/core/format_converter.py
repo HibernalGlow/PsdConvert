@@ -166,18 +166,19 @@ def convert_psd_files(directory, use_recycle_bin=True):
 
 def convert_pdf_to_images(pdf_path):
     """
-    使用PyMuPDF将PDF文件转换为PNG图片,每页保存为单独的文件
+    使用pypdfium2将PDF文件转换为PNG图片，每页保存为单独的文件
+    pypdfium2基于Google的PDFium引擎，性能优异
     
     参数:
     pdf_path -- PDF文件路径
     """
     try:
-        # 检查fitz库是否可用
+        # 检查pypdfium2库是否可用
         try:
-            import fitz
+            import pypdfium2 as pdfium
         except ImportError as e:
-            logger.error(f"PyMuPDF (fitz)库导入失败: {e}")
-            logger.error("请安装PyMuPDF: pip install PyMuPDF")
+            logger.error(f"pypdfium2库导入失败: {e}")
+            logger.error("请安装pypdfium2: pip install pypdfium2")
             return False
 
         # 检查文件是否存在和可访问
@@ -195,31 +196,38 @@ def convert_pdf_to_images(pdf_path):
         
         # 打开PDF文件
         try:
-            doc = fitz.open(pdf_path)
-            logger.info(f"PDF信息: 页数={doc.page_count}")
+            # 使用二进制模式打开避免编码问题
+            pdf = pdfium.PdfDocument(pdf_path)
+            page_count = len(pdf)
+            logger.info(f"PDF信息: 页数={page_count}")
         except Exception as e:
             logger.error(f"打开PDF文件失败: {e}")
             return False
 
         # 转换每一页
-        for page_num in range(doc.page_count):
+        for page_num in range(page_count):
             try:
-                page = doc[page_num]
-                # 设置更高的缩放因子以获得更好的图像质量
-                zoom = 2.0
-                mat = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=mat)
+                # 获取页面并渲染为位图
+                page = pdf[page_num]
+                # 设置较高的渲染分辨率，等效于放大2倍
+                scale = 2.0
+                bitmap = page.render(
+                    scale=scale,
+                    rotation=0,  # 不旋转
+                )
                 
-                # 保存图像
+                # 将位图转换为PIL图像并保存
+                pil_image = bitmap.to_pil()
                 image_path = os.path.join(output_dir, f'page_{page_num + 1}.png')
-                pix.save(image_path)
+                pil_image.save(image_path, format="PNG")
                 logger.info(f"成功保存第 {page_num + 1} 页到 {image_path}")
             except Exception as e:
                 logger.error(f"处理第 {page_num + 1} 页时出错: {e}")
+                logger.error(traceback.format_exc())
                 continue
 
         # 关闭PDF文档
-        doc.close()
+        pdf.close()
             
         # 转换完成后将PDF移到回收站
         try:
@@ -231,7 +239,8 @@ def convert_pdf_to_images(pdf_path):
             return False
         
     except Exception as e:
-        logger.error(f"处理PDF文件时出错 {pdf_path}: {e}")
+        logger.error(f"处理PDF文件时出错 {pdf_path}: {str(e)}")
+        logger.error(traceback.format_exc())
         return False
 
 def convert_pdf_files(directory):
