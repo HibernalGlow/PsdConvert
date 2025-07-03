@@ -10,6 +10,8 @@ import subprocess
 import psutil
 import traceback
 from loguru import logger
+# 导入多进程辅助模块
+from psdconvert.core.multiprocess_helper import MultiprocessExecutor
 # 支持的目标格式
 TARGET_FORMATS = ['.psd', '.pdf', '.clip']
 
@@ -130,39 +132,33 @@ def process_psd_wrapper(args):
     """
     return process_single_psd(*args)
 
-def convert_psd_files(directory, use_recycle_bin=True):
-    """转换目录中的所有PSD文件"""
+def convert_psd_files(directory, use_recycle_bin=True, config=None):
+    """
+    转换目录中的所有PSD文件
+    
+    参数:
+    directory -- 目标目录路径
+    use_recycle_bin -- 是否使用回收站删除原文件
+    config -- 配置字典，如果为None则使用默认值
+    """
     directory = Path(directory)
     psd_files = list(directory.rglob('*.psd'))
     
     if not psd_files:
-        print(f"在 {directory} 中没有找到PSD文件")
+        logger.info(f"在 {directory} 中没有找到PSD文件")
         return
     
-    # 检查内存使用情况
-    memory_percent = psutil.virtual_memory().percent
-    if memory_percent > 90:
-        logger.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
-        num_processes = 1
-    else:
-        num_processes = max(8, cpu_count() - 1)  # 保留一个CPU核心
+    # 使用MultiprocessExecutor进行多进程处理
+    executor = MultiprocessExecutor(process_type="psd", config=config)
+    results = executor.execute(
+        process_func=process_psd_wrapper,
+        items=psd_files,
+        args_factory=lambda f: (str(f), str(f.parent), use_recycle_bin),
+        desc="转换PSD文件"
+    )
     
-    print(f"使用 {num_processes} 个进程进行转换")
-    
-    with Pool(num_processes) as pool:
-        args = [(str(f), str(f.parent), use_recycle_bin) for f in psd_files]
-        results = []
-        
-        # 使用process_psd_wrapper替代lambda函数
-        for result in tqdm(
-            pool.imap_unordered(process_psd_wrapper, args),
-            total=len(psd_files),
-            desc="转换PSD文件"
-        ):
-            results.append(result)
-    
-    success_count = sum(results)
-    print(f"\n转换完成: 成功 {success_count}/{len(psd_files)} 个文件")
+    success_count = sum(1 for r in results if r)
+    logger.info(f"PSD转换完成: 成功 {success_count}/{len(psd_files)} 个文件")
 
 def convert_pdf_to_images(pdf_path):
     """
@@ -243,23 +239,38 @@ def convert_pdf_to_images(pdf_path):
         logger.error(traceback.format_exc())
         return False
 
-def convert_pdf_files(directory):
-    """转换目录中的所有PDF文件"""
+def process_pdf_wrapper(pdf_path):
+    """
+    包装函数用于多进程处理PDF文件
+    """
+    return convert_pdf_to_images(pdf_path)
+
+def convert_pdf_files(directory, config=None):
+    """
+    转换目录中的所有PDF文件
+    
+    参数:
+    directory -- 目标目录路径
+    config -- 配置字典，如果为None则使用默认值
+    """
     directory = Path(directory)
     pdf_files = list(directory.rglob('*.pdf'))
     
     if not pdf_files:
-        print(f"在 {directory} 中没有找到PDF文件")
+        logger.info(f"在 {directory} 中没有找到PDF文件")
         return
     
-    with tqdm(total=len(pdf_files), desc="转换PDF文件") as pbar:
-        for pdf_file in pdf_files:
-            success = convert_pdf_to_images(str(pdf_file))
-            pbar.update(1)
-            if success:
-                pbar.set_description(f"成功转换并移除: {pdf_file.name}")
-            else:
-                pbar.set_description(f"转换失败: {pdf_file.name}")
+    # 使用MultiprocessExecutor进行多进程处理
+    executor = MultiprocessExecutor(process_type="pdf", config=config)
+    results = executor.execute(
+        process_func=process_pdf_wrapper,
+        items=pdf_files,
+        args_factory=lambda f: str(f),
+        desc="转换PDF文件"
+    )
+    
+    success_count = sum(1 for r in results if r)
+    logger.info(f"PDF转换完成: 成功 {success_count}/{len(pdf_files)} 个文件")
 
 def convert_clip_via_psd(clip_path, use_recycle_bin=True):
     """
@@ -395,8 +406,15 @@ def process_clip_wrapper(args):
     """
     return convert_clip_via_psd(*args)
 
-def convert_clip_files(directory, use_recycle_bin=True):
-    """转换目录中的所有CLIP文件 (通过先转为PSD，使用多进程)"""
+def convert_clip_files(directory, use_recycle_bin=True, config=None):
+    """
+    转换目录中的所有CLIP文件 (通过先转为PSD，使用多进程)
+    
+    参数:
+    directory -- 目标目录路径
+    use_recycle_bin -- 是否使用回收站删除原文件
+    config -- 配置字典，如果为None则使用默认值
+    """
     directory = Path(directory)
     clip_files = list(directory.rglob('*.clip'))
 
@@ -406,32 +424,14 @@ def convert_clip_files(directory, use_recycle_bin=True):
 
     logger.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")
 
-    # 检查内存使用情况，决定进程数
-    memory_percent = psutil.virtual_memory().percent
-    if memory_percent > 90:
-        logger.warning(f"内存使用率超过90%（当前：{memory_percent}%），切换到单线程模式")
-        num_processes = 1
-    else:
-        # CLIP转换比较耗资源，限制进程数
-        num_processes = max(1, min(4, cpu_count() - 1))  # 保留一个CPU核心
+    # 使用MultiprocessExecutor进行多进程处理
+    executor = MultiprocessExecutor(process_type="clip", config=config)
+    results = executor.execute(
+        process_func=process_clip_wrapper,
+        items=clip_files,
+        args_factory=lambda f: (str(f), use_recycle_bin),
+        desc="转换CLIP文件 (via PSD)"
+    )
     
-    print(f"使用 {num_processes} 个进程进行CLIP文件转换")
-
-    results = []
-    with Pool(num_processes) as pool:
-        args_list = [(str(f), use_recycle_bin) for f in clip_files]
-        
-        # 使用 tqdm 显示进度
-        with tqdm(total=len(clip_files), desc="转换CLIP文件 (via PSD)") as pbar:
-            for success in pool.imap_unordered(process_clip_wrapper, args_list):
-                results.append(success)
-                pbar.update(1) # 更新进度条
-                # 更新进度条描述 (可选，可能因并发导致信息不准确)
-                # pbar.set_description(f"{'成功' if success else '失败'}: ...") 
-
-    success_count = sum(results)
-    print(f"\nCLIP文件转换完成: 成功 {success_count}/{len(clip_files)} 个文件")
-    if success_count == 0:
-        logger.info("所有CLIP文件转换失败")
-    else:
-        logger.info(f"成功转换 {success_count} 个CLIP文件")
+    success_count = sum(1 for r in results if r)
+    logger.info(f"CLIP文件转换完成: 成功 {success_count}/{len(clip_files)} 个文件")

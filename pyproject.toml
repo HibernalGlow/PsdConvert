@@ -1,6 +1,6 @@
 [project]
 name = "psdconvert"
-version = "0.1.0"
+version = "0.1.5"
 description = "工具用于转换各种图像格式文件，特别是PSD、PDF和CLIP文件到PNG格式"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,9 +22,8 @@ dependencies = [
     "psutil",
     "loguru",
     "send2trash",
-    "PyMuPDF"
-    
-
+    "PyMuPDF",
+    "pypdfium2",
 ]
 
 [project.optional-dependencies]

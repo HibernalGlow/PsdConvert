@@ -24,13 +24,13 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-def setup_logger(app_name="app", project_root=None):
+def setup_logger(app_name="app", project_root=None, console_output=True):
     """配置 Loguru 日志系统
     
     Args:
         app_name: 应用名称，用于日志目录
         project_root: 项目根目录，默认为当前文件所在目录
-        
+        console_output: 是否输出到控制台，默认为True
     Returns:
         tuple: (logger, config_info)
             - logger: 配置好的 logger 实例
@@ -43,12 +43,13 @@ def setup_logger(app_name="app", project_root=None):
     # 清除默认处理器
     logger.remove()
     
-    # 添加控制台处理器（简洁版格式）
-    logger.add(
-        sys.stdout,
-        level="INFO",
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{elapsed}</blue> | <level>{level.icon} {level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>"
-    )
+    # 有条件地添加控制台处理器（简洁版格式）
+    if console_output:
+        logger.add(
+            sys.stdout,
+            level="INFO",
+            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <blue>{elapsed}</blue> | <level>{level.icon} {level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>"
+        )
     
     # 使用 datetime 构建日志路径
     current_time = datetime.now()
@@ -61,7 +62,7 @@ def setup_logger(app_name="app", project_root=None):
     os.makedirs(log_dir, exist_ok=True)
     log_file = os.path.join(log_dir, f"{minute_str}.log")
     
-    # 添加文件处理器
+    # 添加文件处理器（多进程安全，enqueue=True）
     logger.add(
         log_file,
         level="DEBUG",
@@ -70,7 +71,8 @@ def setup_logger(app_name="app", project_root=None):
         compression="zip",
         encoding="utf-8",
         format="{time:YYYY-MM-DD HH:mm:ss} | {elapsed} | {level.icon} {level: <8} | {name}:{function}:{line} - {message}",
-    )
+        enqueue=True,  # 多进程安全合并日志
+)
     
     # 创建配置信息字典
     config_info = {
@@ -80,7 +82,8 @@ def setup_logger(app_name="app", project_root=None):
     logger.info(f"日志系统已初始化，应用名称: {app_name}")
     return logger, config_info
 
-logger, config_info = setup_logger(app_name="psd_convert")
+logger, config_info = setup_logger(app_name="psd_convert", console_output=True)
+
 
 def delete_files_by_extensions(directory, extensions):
     """
@@ -231,17 +234,17 @@ def process_directory(directory, config, custom_target_formats):
         # 处理PSD文件
         if config["files"]["psd_handling"] == 'convert':
             logger.info("=== 开始转换PSD文件 ===")
-            convert_psd_files(directory, config["files"]["use_recycle_bin"])
+            convert_psd_files(directory, config["files"]["use_recycle_bin"], config)
         
         # 处理PDF文件
         if config["files"]["pdf_handling"] == 'convert':
             logger.info("=== 开始转换PDF文件 ===")
-            convert_pdf_files(directory)
+            convert_pdf_files(directory, config)
         
         # 处理CLIP文件
         if config["files"]["clip_handling"] == 'convert':
             logger.info("=== 开始转换CLIP文件 ===")
-            convert_clip_files(directory, config["files"]["use_recycle_bin"])
+            convert_clip_files(directory, config["files"]["use_recycle_bin"], config)
         
         # 构建需要删除的文件扩展名列表
         delete_extensions = config["delete_config"]["extensions"].copy()
@@ -278,6 +281,13 @@ def main():
     parser.add_argument('--config', default=None, help='指定配置文件路径')
     parser.add_argument('--formats', default=','.join(TARGET_FORMATS), 
                        help=f'待处理的目标文件格式，逗号分隔，例如: {",".join(TARGET_FORMATS)}')
+    # 添加多进程相关参数
+    parser.add_argument('--disable-multiprocessing', action='store_true', help='禁用多进程处理，使用单进程模式')
+    parser.add_argument('--max-processes', type=int, default=None, help='指定最大进程数，适用于所有处理类型')
+    parser.add_argument('--max-psd-processes', type=int, default=None, help='指定PSD处理的最大进程数')
+    parser.add_argument('--max-pdf-processes', type=int, default=None, help='指定PDF处理的最大进程数')
+    parser.add_argument('--max-clip-processes', type=int, default=None, help='指定CLIP处理的最大进程数')
+    parser.add_argument('--disable-auto-adjust', action='store_true', help='禁用自动调整进程数，始终使用指定的最大进程数')
     args = parser.parse_args()
     
     # 获取目录路径
@@ -312,6 +322,41 @@ def main():
     # 如果命令行指定了保留压缩文件，覆盖配置文件中的设置
     if args.keep_archives:
         config["files"]["delete_archives"] = False
+    
+    # 处理多进程设置
+    if "multiprocessing" not in config:
+        config["multiprocessing"] = {
+            "enabled": True,
+            "auto_adjust": True,
+            "max_processes": {
+                "psd": 8,
+                "pdf": 4,
+                "clip": 4
+            }
+        }
+    
+    # 根据命令行参数更新多进程配置
+    if args.disable_multiprocessing:
+        config["multiprocessing"]["enabled"] = False
+    
+    if args.disable_auto_adjust:
+        config["multiprocessing"]["auto_adjust"] = False
+    
+    # 更新最大进程数
+    if args.max_processes is not None:
+        config["multiprocessing"]["max_processes"]["psd"] = args.max_processes
+        config["multiprocessing"]["max_processes"]["pdf"] = args.max_processes
+        config["multiprocessing"]["max_processes"]["clip"] = args.max_processes
+    
+    # 分别更新不同类型的最大进程数
+    if args.max_psd_processes is not None:
+        config["multiprocessing"]["max_processes"]["psd"] = args.max_psd_processes
+    
+    if args.max_pdf_processes is not None:
+        config["multiprocessing"]["max_processes"]["pdf"] = args.max_pdf_processes
+    
+    if args.max_clip_processes is not None:
+        config["multiprocessing"]["max_processes"]["clip"] = args.max_clip_processes
     
     # 解析目标文件格式
     custom_target_formats = [f.strip() for f in args.formats.split(',')]

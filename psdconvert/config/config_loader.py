@@ -53,5 +53,14 @@ def get_default_config():
         "delete_config": {
             "extensions": ["txt", "js", "url", "htm", "html", "docx"],
             "keywords": ["進捗", "宣伝", "同人誌", "予告", "新刊"]
+        },
+        "multiprocessing": {
+            "enabled": True,
+            "auto_adjust": True,
+            "max_processes": {
+                "psd": 8,
+                "pdf": 16,
+                "clip": 8
+            }
         }
     }
