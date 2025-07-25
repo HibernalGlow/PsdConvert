@@ -95,14 +95,28 @@ class SqliteHandler:
         logger.debug("读取图层数据")
         
         layer_list = []
-        query = """
-        SELECT MainId, CanvasId, LayerName, LayerUuid, LayerRenderMipmap, 
-               LayerRenderThumbnail, LayerNextIndex, LayerFirstChildIndex, LayerType 
-        FROM Layer;
-        """
+        # 先尝试获取所有可能的字段，如果失败则使用基本字段
+        try:
+            query = """
+            SELECT MainId, CanvasId, LayerName, LayerUuid, LayerRenderMipmap,
+                   LayerRenderThumbnail, LayerNextIndex, LayerFirstChildIndex, LayerType,
+                   LayerVisible, LayerOpacity, LayerBlendMode, LayerIndex
+            FROM Layer
+            ORDER BY CASE WHEN LayerIndex IS NOT NULL THEN LayerIndex ELSE MainId END ASC;
+            """
+            results = self._execute_query(conn, query)
+        except:
+            # 如果扩展字段不存在，使用基本查询
+            logger.debug("使用基本图层查询（扩展字段不可用）")
+            query = """
+            SELECT MainId, CanvasId, LayerName, LayerUuid, LayerRenderMipmap,
+                   LayerRenderThumbnail, LayerNextIndex, LayerFirstChildIndex, LayerType
+            FROM Layer
+            ORDER BY MainId ASC;
+            """
+            results = self._execute_query(conn, query)
         
         try:
-            results = self._execute_query(conn, query)
             for result in results:
                 layer_data = {
                     'main_id': result[0],
@@ -114,6 +128,10 @@ class SqliteHandler:
                     'layer_next_index': result[6],
                     'layer_first_child_index': result[7],
                     'layer_type': result[8],
+                    'layer_visible': result[9] if len(result) > 9 else 1,  # 默认可见
+                    'layer_opacity': result[10] if len(result) > 10 else 255,  # 默认不透明
+                    'layer_blend_mode': result[11] if len(result) > 11 else 0,  # 默认正常混合
+                    'layer_index': result[12] if len(result) > 12 else 0,  # 默认索引
                 }
                 layer_list.append(layer_data)
                 
@@ -229,10 +247,28 @@ class SqliteHandler:
         """清理临时文件"""
         if self.temp_db_file and os.path.exists(self.temp_db_file):
             try:
+                # 强制关闭可能的数据库连接
+                import gc
+                gc.collect()
+
+                # 尝试删除文件
                 os.remove(self.temp_db_file)
                 logger.debug(f"已删除临时数据库文件: {self.temp_db_file}")
+            except PermissionError:
+                # Windows上可能出现文件被占用的情况，延迟删除
+                logger.debug(f"临时数据库文件被占用，将在程序退出时删除: {self.temp_db_file}")
+                import atexit
+                atexit.register(lambda: self._force_delete(self.temp_db_file))
             except Exception as e:
                 logger.warning(f"删除临时数据库文件失败: {str(e)}")
+
+    def _force_delete(self, filepath: str) -> None:
+        """强制删除文件"""
+        try:
+            if os.path.exists(filepath):
+                os.remove(filepath)
+        except:
+            pass  # 静默忽略删除失败
     
     def __del__(self):
         """析构函数，确保清理临时文件"""

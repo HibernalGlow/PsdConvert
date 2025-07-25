@@ -316,38 +316,53 @@ class ImageProcessor:
                     continue
 
                 try:
+                    logger.debug(f"处理图层: {layer_name}, 形状: {bgra_image.shape}")
                     # 获取图层尺寸
                     layer_height, layer_width = bgra_image.shape[:2]
 
-                    # 计算放置位置（居中）
-                    start_y = max(0, (canvas_height - layer_height) // 2)
-                    start_x = max(0, (canvas_width - layer_width) // 2)
-                    end_y = min(canvas_height, start_y + layer_height)
-                    end_x = min(canvas_width, start_x + layer_width)
+                    # 如果图层尺寸与画布相同，直接覆盖
+                    if layer_height == canvas_height and layer_width == canvas_width:
+                        start_y, start_x = 0, 0
+                        end_y, end_x = canvas_height, canvas_width
+                        layer_region = bgra_image
+                        canvas_region = merged_canvas
+                    else:
+                        # 计算放置位置（居中）
+                        start_y = max(0, (canvas_height - layer_height) // 2)
+                        start_x = max(0, (canvas_width - layer_width) // 2)
+                        end_y = min(canvas_height, start_y + layer_height)
+                        end_x = min(canvas_width, start_x + layer_width)
 
-                    # 计算实际复制区域
-                    copy_height = end_y - start_y
-                    copy_width = end_x - start_x
+                        # 计算实际复制区域
+                        copy_height = end_y - start_y
+                        copy_width = end_x - start_x
 
-                    # 获取要复制的图层区域
-                    layer_region = bgra_image[:copy_height, :copy_width]
-                    canvas_region = merged_canvas[start_y:end_y, start_x:end_x]
+                        # 获取要复制的图层区域
+                        layer_region = bgra_image[:copy_height, :copy_width]
+                        canvas_region = merged_canvas[start_y:end_y, start_x:end_x]
 
-                    # Alpha混合
-                    alpha = layer_region[:, :, 3:4] / 255.0
+                    # Alpha混合 - 修复数组形状问题
+                    src_alpha = layer_region[:, :, 3] / 255.0  # 移除多余维度
+                    dst_alpha = canvas_region[:, :, 3] / 255.0  # 移除多余维度
+
+                    # 计算输出Alpha
+                    out_alpha = src_alpha + dst_alpha * (1 - src_alpha)
+
+                    # 避免除零
+                    out_alpha_safe = np.where(out_alpha > 0, out_alpha, 1)
 
                     # 混合颜色通道
                     for c in range(3):  # BGR通道
-                        canvas_region[:, :, c] = (
-                            alpha[:, :, 0] * layer_region[:, :, c] +
-                            (1 - alpha[:, :, 0]) * canvas_region[:, :, c]
-                        )
+                        src_color = layer_region[:, :, c] / 255.0
+                        dst_color = canvas_region[:, :, c] / 255.0
+
+                        # Porter-Duff over公式
+                        out_color = (src_color * src_alpha + dst_color * dst_alpha * (1 - src_alpha)) / out_alpha_safe
+
+                        canvas_region[:, :, c] = (out_color * 255).astype(np.uint8)
 
                     # 更新Alpha通道
-                    canvas_region[:, :, 3] = np.maximum(
-                        canvas_region[:, :, 3],
-                        layer_region[:, :, 3]
-                    )
+                    canvas_region[:, :, 3] = (out_alpha * 255).astype(np.uint8)
 
                     processed_count += 1
                     logger.debug(f"成功合并图层: {layer_name}")

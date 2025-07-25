@@ -258,17 +258,52 @@ class CspConverter:
             # 获取所有图层数据
             layers_data = []
             layer_list = self.get_layer_list()
-            
-            logger.info(f"处理 {len(layer_list)} 个图层")
-            
+
+            # 过滤可见图层并按正确顺序排序
+            visible_layers = []
+            logger.info("分析图层信息:")
+
             for layer in layer_list:
+                # 检查图层是否可见
+                is_visible = layer.get('layer_visible', 1) != 0
+                layer_type = layer.get('layer_type', 0)
+                layer_opacity = layer.get('layer_opacity', 255)
+                layer_index = layer.get('layer_index', layer.get('main_id', 0))
+
+                logger.info(f"  图层: {layer['layer_name']} | 可见: {is_visible} | 类型: {layer_type} | 透明度: {layer_opacity} | 索引: {layer_index}")
+
+                # 跳过隐藏图层和某些特殊类型的图层
+                if not is_visible:
+                    logger.debug(f"跳过隐藏图层: {layer['layer_name']}")
+                    continue
+
+                # 跳过文件夹图层等特殊类型
+                if layer_type in [1, 2]:  # 1=文件夹, 2=参考图层等
+                    logger.debug(f"跳过特殊类型图层: {layer['layer_name']} (type={layer_type})")
+                    continue
+
+                visible_layers.append(layer)
+
+            # 按图层索引排序（从底层到顶层）
+            visible_layers.sort(key=lambda x: x.get('layer_index', x.get('main_id', 0)))
+
+            logger.info(f"处理 {len(visible_layers)}/{len(layer_list)} 个可见图层")
+
+            for layer in visible_layers:
                 canvas_id = layer['canvas_id']
                 layer_id = layer['main_id']
                 layer_name = layer['layer_name']
-                
-                logger.debug(f"处理图层: {layer_name}")
-                
+                layer_opacity = layer.get('layer_opacity', 255)
+
+                logger.debug(f"处理图层: {layer_name} (透明度: {layer_opacity})")
+
                 _, _, bgra_image = self.get_layer_data(canvas_id, layer_id)
+
+                # 应用图层透明度
+                if bgra_image is not None and layer_opacity < 255:
+                    opacity_factor = layer_opacity / 255.0
+                    bgra_image[:, :, 3] = (bgra_image[:, :, 3] * opacity_factor).astype(np.uint8)
+
                 layers_data.append((layer_name, bgra_image))
             
             # 合并图层
