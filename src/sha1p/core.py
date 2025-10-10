@@ -58,8 +58,9 @@ def rename_with_sha1(directory, sha1_length=8):
 
 
 def process_directories(root_dir):
-    """Process all directories recursively."""
+    """Process all directories that contain images."""
     for dirpath, dirnames, filenames in os.walk(root_dir):
-        # Only process if there are no subdirectories (leaf directory)
-        if not dirnames:
+        # Check if directory has direct image files
+        image_files = get_image_files(dirpath)
+        if image_files:
             rename_with_sha1(dirpath)
