@@ -1,28 +1,56 @@
 #!/usr/bin/env python3
 """SHA1 Processor CLI"""
 
-import sys
-import argparse
-from pathlib import Path
+import typer
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+from typing import List, Optional
 from .core import process_directories
+from .input_path import get_paths
+
+app = typer.Typer()
+console = Console()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Process images in directories to rename first image with SHA1.")
-    parser.add_argument("root_dir", help="Root directory to process")
-    parser.add_argument("--sha1-length", type=int, default=8, help="Length of SHA1 to append (default: 8)")
+@app.command()
+def main(
+    paths: Optional[List[str]] = typer.Argument(None, help="Directories to process"),
+    sha1_length: int = typer.Option(8, help="Length of SHA1 to append")
+):
+    """
+    Process images in directories to rename first image with SHA1.
+    """
+    # Handle Typer's ArgumentInfo when no paths provided
+    try:
+        len(paths)
+    except TypeError:
+        paths = None
 
-    args = parser.parse_args()
+    if paths is None:
+        # Interactive mode
+        console.print(Panel.fit(
+            Text("SHA1 Processor - Interactive Mode", style="bold blue"),
+            title="Welcome"
+        ))
+        console.print("No paths provided. Entering interactive mode...\n")
+        paths = get_paths()
+        if not paths:
+            console.print("[red]No valid paths provided. Exiting.[/red]")
+            raise typer.Exit(1)
 
-    root_path = Path(args.root_dir)
-    if not root_path.exists() or not root_path.is_dir():
-        print(f"Error: {args.root_dir} is not a valid directory")
-        sys.exit(1)
+    console.print(f"[green]Processing {len(paths)} path(s)...[/green]")
 
-    # Note: sha1_length is not used in current implementation, can be extended
-    process_directories(str(root_path))
-    print("Processing complete.")
+    for path in paths:
+        console.print(f"[blue]Processing: {path}[/blue]")
+        try:
+            process_directories(path, sha1_length)
+            console.print(f"[green]✓ Completed: {path}[/green]")
+        except Exception as e:
+            console.print(f"[red]✗ Error processing {path}: {e}[/red]")
+
+    console.print("[bold green]All processing complete![/bold green]")
 
 
 if __name__ == "__main__":
-    main()
+    app()
