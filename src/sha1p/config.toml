@@ -1,2 +1,2 @@
 [rename]
-template = "{stem}_{sha1}{suffix}"
+template = "{stem}[SHA1:{sha1}]{suffix}"
