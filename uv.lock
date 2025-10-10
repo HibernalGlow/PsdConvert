@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.12'",
@@ -896,7 +896,7 @@ requires-dist = [
     { name = "send2trash" },
     { name = "send2trash", specifier = ">=1.8.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
-    { name = "typer", extras = ["all"], specifier = ">=0.16.0" },
+    { name = "typer" },
     { name = "wand", specifier = ">=0.6.11" },
 ]
 provides-extras = ["dev"]
