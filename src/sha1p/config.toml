@@ -1,2 +1,5 @@
 [rename]
 template = "{stem}[SHA1:{sha1}]{suffix}"
+sha1_length = -1
+max_images = 3
+blacklist_keywords = ["画集"]

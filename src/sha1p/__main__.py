@@ -16,7 +16,8 @@ console = Console()
 @app.command()
 def main(
     paths: Optional[List[str]] = typer.Argument(None, help="Directories to process"),
-    sha1_length: int = typer.Option(8, help="Length of SHA1 to append")
+    sha1_length: int = typer.Option(-1, help="Length of SHA1 to append (-1 for no truncation)"),
+    max_images: int = typer.Option(3, help="Maximum number of images to process per directory")
 ):
     """
     Process images in directories to rename first image with SHA1.
@@ -44,7 +45,7 @@ def main(
     for path in paths:
         console.print(f"[blue]Processing: {path}[/blue]")
         try:
-            process_directories(path, sha1_length)
+            process_directories(path, sha1_length, max_images)
             console.print(f"[green]✓ Completed: {path}[/green]")
         except Exception as e:
             console.print(f"[red]✗ Error processing {path}: {e}[/red]")
