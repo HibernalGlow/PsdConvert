@@ -150,8 +150,10 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
             # Write hash file for this directory
             if enable_hash_file and hash_info:
                 hash_file_path = os.path.join(dirpath, os.path.basename(dirpath) + ".sha1")
+                folder_name = os.path.basename(dirpath)
                 with open(hash_file_path, 'w', encoding='utf-8') as f:
                     for orig_filename, sha1_hash in hash_info:
-                        # Use relative path from the hash file's directory
-                        f.write(f"{orig_filename} *{sha1_hash}\n")
+                        # Use relative path with folder name
+                        relative_path = f"{folder_name}/{orig_filename}"
+                        f.write(f"{relative_path} *{sha1_hash}\n")
                 print(f"Hash file written to {hash_file_path}")
