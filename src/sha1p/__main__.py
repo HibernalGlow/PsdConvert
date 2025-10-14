@@ -43,13 +43,22 @@ def main(
 
     console.print(f"[green]Processing {len(paths)} path(s)...[/green]")
 
+    total_processed = 0
+    total_errors = 0
+    
     for path in paths:
         console.print(f"[blue]Processing: {path}[/blue]")
         try:
             process_directories(path, sha1_length, max_images, enable_rename)
             console.print(f"[green]✓ Completed: {path}[/green]")
         except Exception as e:
+            total_errors += 1
             console.print(f"[red]✗ Error processing {path}: {e}[/red]")
+            console.print("[yellow]Continuing with next path...[/yellow]")
+    
+    console.print(f"\n[bold green]All processing complete![/bold green]")
+    if total_errors > 0:
+        console.print(f"[yellow]Total errors: {total_errors}[/yellow]")
 
     console.print("[bold green]All processing complete![/bold green]")
 
