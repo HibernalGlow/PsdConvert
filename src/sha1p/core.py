@@ -89,9 +89,15 @@ def rename_with_sha1(directory, sha1_length=None, template=None, max_images=None
         print(f"All image files already renamed in {directory}")
         return []
 
+    # Determine how many images to process
+    if max_images == -1:
+        images_to_process = image_files  # Process all
+    else:
+        images_to_process = image_files[:max_images]  # Process limited number
+
     hash_info = []
-    # Process up to max_images
-    for i, first_image in enumerate(image_files[:max_images]):
+    # Process images
+    for i, first_image in enumerate(images_to_process):
         image_path = os.path.join(directory, first_image)
 
         sha1_hash = calculate_sha1(image_path)
@@ -146,6 +152,6 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
                 hash_file_path = os.path.join(dirpath, os.path.basename(dirpath) + ".sha1")
                 with open(hash_file_path, 'w', encoding='utf-8') as f:
                     for orig_filename, sha1_hash in hash_info:
-                        file_path = os.path.join(dirpath, orig_filename)
-                        f.write(f"{file_path} *{sha1_hash}\n")
+                        # Use relative path from the hash file's directory
+                        f.write(f"{orig_filename} *{sha1_hash}\n")
                 print(f"Hash file written to {hash_file_path}")
