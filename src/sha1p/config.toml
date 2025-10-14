@@ -1,6 +1,6 @@
 [rename]
 template = "{stem}[SHA1:{sha1}]{suffix}"
-enable_rename = true
+enable_rename = false
 
 [format]
 sha1_length = -1

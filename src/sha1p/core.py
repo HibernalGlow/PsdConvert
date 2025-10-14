@@ -130,7 +130,6 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
     blacklist_keywords = config["blacklist"].get("keywords", [])
     enable_hash_file = config["processing"].get("enable_hash_file", True)
     
-    all_hash_info = []
     for dirpath, dirnames, filenames in os.walk(root_dir):
         # Check blacklist
         if any(keyword in dirpath for keyword in blacklist_keywords):
@@ -141,13 +140,12 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
         image_files = get_image_files(dirpath)
         if image_files:
             hash_info = rename_with_sha1(dirpath, sha1_length, max_images=max_images, enable_rename=enable_rename)
-            if enable_hash_file:
-                all_hash_info.extend([(os.path.join(dirpath, orig), h) for orig, h in hash_info])
-    
-    # Write hash file
-    if enable_hash_file and all_hash_info:
-        hash_file_path = os.path.join(root_dir, os.path.basename(root_dir) + ".sha1")
-        with open(hash_file_path, 'w', encoding='utf-8') as f:
-            for file_path, sha1_hash in all_hash_info:
-                f.write(f"{file_path} *{sha1_hash}\n")
-        print(f"Hash file written to {hash_file_path}")
+            
+            # Write hash file for this directory
+            if enable_hash_file and hash_info:
+                hash_file_path = os.path.join(dirpath, os.path.basename(dirpath) + ".sha1")
+                with open(hash_file_path, 'w', encoding='utf-8') as f:
+                    for orig_filename, sha1_hash in hash_info:
+                        file_path = os.path.join(dirpath, orig_filename)
+                        f.write(f"{file_path} *{sha1_hash}\n")
+                print(f"Hash file written to {hash_file_path}")
