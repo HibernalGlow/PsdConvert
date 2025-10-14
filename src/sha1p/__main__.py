@@ -18,7 +18,7 @@ def main(
     paths: Optional[List[str]] = typer.Argument(None, help="Directories to process"),
     sha1_length: int = typer.Option(-1, help="Length of SHA1 to append (-1 for no truncation)"),
     max_images: int = typer.Option(3, help="Maximum number of images to process per directory"),
-    enable_rename: bool = typer.Option(True, help="Enable file renaming"),
+    enable_rename: Optional[bool] = typer.Option(None, help="Enable file renaming"),
 ):
     """
     Process images in directories to rename first image with SHA1.

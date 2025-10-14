@@ -20,7 +20,7 @@ def load_config():
     return {
         "rename": {"template": "{stem}[SHA1:{sha1}]{suffix}", "enable_rename": True},
         "format": {"sha1_length": -1},
-        "processing": {"max_images": 3, "enable_hash_file": True},
+        "processing": {"max_images": 3, "enable_hash_file": True, "existing_hash_file_mode": "skip"},
         "blacklist": {"keywords": ["画集"]}
     }
 
@@ -135,6 +135,7 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
     config = load_config()
     blacklist_keywords = config["blacklist"].get("keywords", [])
     enable_hash_file = config["processing"].get("enable_hash_file", True)
+    existing_hash_file_mode = config["processing"].get("existing_hash_file_mode", "skip")
     
     for dirpath, dirnames, filenames in os.walk(root_dir):
         # Check blacklist
@@ -147,13 +148,50 @@ def process_directories(root_dir, sha1_length=None, max_images=None, enable_rena
         if image_files:
             hash_info = rename_with_sha1(dirpath, sha1_length, max_images=max_images, enable_rename=enable_rename)
             
-            # Write hash file for this directory
+            # Handle hash file generation
             if enable_hash_file and hash_info:
                 hash_file_path = os.path.join(dirpath, os.path.basename(dirpath) + ".sha1")
-                folder_name = os.path.basename(dirpath)
-                with open(hash_file_path, 'w', encoding='utf-8') as f:
-                    for orig_filename, sha1_hash in hash_info:
-                        # Use relative path with folder name
-                        relative_path = f"{folder_name}/{orig_filename}"
-                        f.write(f"{relative_path} *{sha1_hash}\n")
-                print(f"Hash file written to {hash_file_path}")
+                hash_file_exists = os.path.exists(hash_file_path)
+                
+                if hash_file_exists and existing_hash_file_mode == "skip":
+                    print(f"Hash file already exists, skipping: {hash_file_path}")
+                    continue
+                elif hash_file_exists and existing_hash_file_mode == "append":
+                    # Read existing content and append new entries
+                    existing_lines = []
+                    try:
+                        with open(hash_file_path, 'r', encoding='utf-8') as f:
+                            existing_lines = f.readlines()
+                    except Exception as e:
+                        print(f"Warning: Could not read existing hash file {hash_file_path}: {e}")
+                    
+                    # Filter out entries that already exist for current files
+                    current_filenames = {orig for orig, _ in hash_info}
+                    filtered_lines = []
+                    for line in existing_lines:
+                        if line.strip():
+                            parts = line.strip().split(' *', 1)
+                            if len(parts) == 2:
+                                filename = parts[0].split('/', 1)[-1]  # Extract filename from folder/filename format
+                                if filename not in current_filenames:
+                                    filtered_lines.append(line)
+                    
+                    # Write combined content
+                    with open(hash_file_path, 'w', encoding='utf-8') as f:
+                        # Write existing entries
+                        f.writelines(filtered_lines)
+                        # Add new entries
+                        folder_name = os.path.basename(dirpath)
+                        for orig_filename, sha1_hash in hash_info:
+                            relative_path = f"{folder_name}/{orig_filename}"
+                            f.write(f"{relative_path} *{sha1_hash}\n")
+                    print(f"Hash file appended: {hash_file_path}")
+                else:
+                    # Create new file or overwrite existing
+                    with open(hash_file_path, 'w', encoding='utf-8') as f:
+                        folder_name = os.path.basename(dirpath)
+                        for orig_filename, sha1_hash in hash_info:
+                            relative_path = f"{folder_name}/{orig_filename}"
+                            f.write(f"{relative_path} *{sha1_hash}\n")
+                    action = "overwritten" if hash_file_exists else "written"
+                    print(f"Hash file {action}: {hash_file_path}")

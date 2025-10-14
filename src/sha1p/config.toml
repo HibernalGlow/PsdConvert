@@ -8,6 +8,7 @@ sha1_length = -1
 [processing]
 max_images = 3
 enable_hash_file = true
+existing_hash_file_mode = "skip"  # skip, overwrite, append
 
 [blacklist]
 keywords = ["画集"]
