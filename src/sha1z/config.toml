@@ -1,0 +1,3 @@
+# Configuration for sha1z package
+[settings]
+delete_after_zip = true
