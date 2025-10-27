@@ -18,34 +18,28 @@ def calculate_sha1(file_path):
 
 def process_files(root_path, delete_after_zip=False):
     """Process files in the given path."""
-    root_path = Path(root_path)
-    zip_name = root_path.name + ".zip"
-    zip_path = root_path.parent / zip_name
-    
-    files_to_add = []
-    for file_path in root_path.rglob('*'):
-        if file_path.is_file():
+    for file_path in Path(root_path).rglob('*'):
+        if file_path.is_file() and file_path.suffix.lower() != '.zip':
             sha1 = calculate_sha1(file_path)
             if sha1:
                 print(f"{file_path}: {sha1}")
-                files_to_add.append(str(file_path))
-    
-    if files_to_add:
-        # Use 7z to create zip with all files
-        try:
-            cmd = ['7z', 'a', str(zip_path)] + files_to_add
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            if result.returncode == 0:
-                print(f"Added files to {zip_path}")
-                if delete_after_zip:
-                    for f in files_to_add:
-                        Path(f).unlink()
-                        print(f"Deleted {f}")
-            else:
-                print(f"Error creating zip: {result.stderr}")
-        except FileNotFoundError:
-            print("7z not found. Please install 7-Zip.")
-            sys.exit(1)
+                zip_name = file_path.stem + ".zip"
+                zip_path = file_path.parent / zip_name
+                
+                # Use 7z to add to existing zip (or create new if not exists)
+                try:
+                    cmd = ['7z', 'a', str(zip_path), str(file_path)]
+                    result = subprocess.run(cmd, capture_output=True, text=True)
+                    if result.returncode == 0:
+                        print(f"Added {file_path} to {zip_path}")
+                        if delete_after_zip:
+                            file_path.unlink()
+                            print(f"Deleted {file_path}")
+                    else:
+                        print(f"Error adding to zip for {file_path}: {result.stderr}")
+                except FileNotFoundError:
+                    print("7z not found. Please install 7-Zip.")
+                    sys.exit(1)
 
 def main(root_path, delete_after_zip=False):
     """Main function to process the path."""
