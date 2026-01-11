@@ -142,10 +142,14 @@ def convert_psd_files(directory, use_recycle_bin=True, config=None):
     config -- 配置字典，如果为None则使用默认值
     """
     directory = Path(directory)
-    psd_files = list(directory.rglob('*.psd'))
+    if directory.is_file():
+        psd_files = [directory] if directory.suffix.lower() == '.psd' else []
+    else:
+        psd_files = list(directory.rglob('*.psd'))
     
     if not psd_files:
-        logger.info(f"在 {directory} 中没有找到PSD文件")
+        if not directory.is_file():
+            logger.info(f"在 {directory} 中没有找到PSD文件")
         return
     
     # 使用MultiprocessExecutor进行多进程处理
@@ -254,10 +258,14 @@ def convert_pdf_files(directory, config=None):
     config -- 配置字典，如果为None则使用默认值
     """
     directory = Path(directory)
-    pdf_files = list(directory.rglob('*.pdf'))
+    if directory.is_file():
+        pdf_files = [directory] if directory.suffix.lower() == '.pdf' else []
+    else:
+        pdf_files = list(directory.rglob('*.pdf'))
     
     if not pdf_files:
-        logger.info(f"在 {directory} 中没有找到PDF文件")
+        if not directory.is_file():
+            logger.info(f"在 {directory} 中没有找到PDF文件")
         return
     
     # 使用MultiprocessExecutor进行多进程处理
@@ -416,10 +424,14 @@ def convert_clip_files(directory, use_recycle_bin=True, config=None):
     config -- 配置字典，如果为None则使用默认值
     """
     directory = Path(directory)
-    clip_files = list(directory.rglob('*.clip'))
+    if directory.is_file():
+        clip_files = [directory] if directory.suffix.lower() == '.clip' else []
+    else:
+        clip_files = list(directory.rglob('*.clip'))
 
     if not clip_files:
-        logger.info(f"在 {directory} 中没有找到CLIP文件")
+        if not directory.is_file():
+            logger.info(f"在 {directory} 中没有找到CLIP文件")
         return
 
     logger.info(f"找到 {len(clip_files)} 个CLIP文件准备转换 (via PSD)")

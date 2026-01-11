@@ -31,31 +31,42 @@ def extract_all_archives_recursive(directory, depth=0, max_depth=5, delete_origi
     
     extracted_dirs = []
     
-    # 第一遍：解压所有压缩文件
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if any(file.lower().endswith(ext) for ext in ARCHIVE_EXTENSIONS):
-                archive_path = os.path.join(root, file)
-                
-                # 先检查是否包含其他压缩文件
-                contains_archives = check_archive_content(archive_path, tuple(ARCHIVE_EXTENSIONS))
-                
-                # 情况1：如果包含压缩文件，直接解压并递归处理
-                if contains_archives:
-                    print(f"压缩包 {archive_path} 包含嵌套压缩文件，执行解压")
-                    extract_path = extract_archive(archive_path, delete_original=delete_original)
-                    if extract_path:
-                        extracted_dirs.append(extract_path)
-                        print(f"成功解压: {archive_path} 到 {extract_path}")
-                else:
-                    # 情况2：如果不包含压缩文件，检查是否包含目标格式文件
+    # 情况1：处理单个文件
+    directory_path = Path(directory)
+    if directory_path.is_file():
+        if any(directory_path.name.lower().endswith(ext) for ext in ARCHIVE_EXTENSIONS):
+            archive_path = str(directory_path)
+            # 检查是否包含其他压缩文件或目标格式
+            contains_archives = check_archive_content(archive_path, tuple(ARCHIVE_EXTENSIONS))
+            contains_target_formats = check_archive_content(archive_path, tuple(target_formats))
+            
+            if contains_archives or contains_target_formats:
+                print(f"压缩包 {archive_path} 包含有效内容，执行解压")
+                extract_path = extract_archive(archive_path, delete_original=delete_original, target_formats=target_formats)
+                if extract_path:
+                    extracted_dirs.append(extract_path)
+        else:
+            print(f"路径 {directory} 不是有效的压缩包，跳过")
+    else:
+        # 情况2：处理目录
+        # 第一遍：解压所有压缩文件
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if any(file.lower().endswith(ext) for ext in ARCHIVE_EXTENSIONS):
+                    archive_path = os.path.join(root, file)
+                    
+                    # 先检查是否包含其他压缩文件
+                    contains_archives = check_archive_content(archive_path, tuple(ARCHIVE_EXTENSIONS))
+                    
+                    # 检查是否包含目标格式文件
                     contains_target_formats = check_archive_content(archive_path, tuple(target_formats))
                     
-                    if contains_target_formats:
-                        print(f"压缩包 {archive_path} 包含目标格式文件，执行解压")
-                        extract_path = extract_archive(archive_path, delete_original=delete_original)
+                    if contains_archives or contains_target_formats:
+                        print(f"压缩包 {archive_path} 包含有效内容，执行解压")
+                        extract_path = extract_archive(archive_path, delete_original=delete_original, target_formats=target_formats)
                         if extract_path:
                             extracted_dirs.append(extract_path)
+                        else:
                             print(f"成功解压: {archive_path} 到 {extract_path}")
                     else:
                         print(f"压缩包 {archive_path} 既不包含压缩文件也不包含目标格式文件，跳过")

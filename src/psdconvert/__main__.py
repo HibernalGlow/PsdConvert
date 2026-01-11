@@ -276,6 +276,7 @@ def main():
     """主函数：处理用户输入和配置，调用其他函数执行实际操作"""
     # 添加命令行参数解析
     parser = argparse.ArgumentParser(description='文件处理工具')
+    parser.add_argument('paths', nargs='*', help='要处理的文件或目录路径')
     parser.add_argument('--clipboard', action='store_true', help='从剪贴板读取路径')
     parser.add_argument('--keep-archives', action='store_true', help='保留原始压缩文件不删除')
     parser.add_argument('--config', default=None, help='指定配置文件路径')
@@ -291,29 +292,36 @@ def main():
     args = parser.parse_args()
     
     # 获取目录路径
-    if args.clipboard:
-        input_text = pyperclip.paste()
+    if args.paths:
+        # 命令行直接提供了路径
+        directories = []
+        for path in args.paths:
+            clean_path = path.strip().strip('"').strip("'").strip()
+            if os.path.exists(clean_path):
+                directories.append(clean_path)
+            else:
+                logger.warning(f"警告：路径不存在 - {clean_path}")
+    elif args.clipboard:
+        # 命令行指定了 --clipboard
+        try:
+            input_text = pyperclip.paste()
+            directories = []
+            for path in input_text.strip().split('\n'):
+                clean_path = path.strip().strip('"').strip("'").strip()
+                if os.path.exists(clean_path):
+                    directories.append(clean_path)
+                else:
+                    logger.warning(f"警告：路径不存在 - {clean_path}")
+        except Exception as e:
+            logger.error(f"从剪贴板读取路径时出错: {e}")
+            return
     else:
-        print("请一次性粘贴所有目录路径（每行一个路径，最后输入空行结束）:")
-        input_text = ""
-        while True:
-            line = input()
-            if not line:
-                break
-            input_text += line + "\n"
-
-    # 处理输入的路径
-    directories = []
-    for path in input_text.strip().split('\n'):
-        # 去除可能存在的引号和空白字符
-        clean_path = path.strip().strip('"').strip("'").strip()
-        if os.path.exists(clean_path):
-            directories.append(clean_path)
-        else:
-            logger.warning(f"警告：路径不存在 - {clean_path}")
+        # 交互模式：显示丰富界面
+        from psdconvert.core.input_handler import get_paths
+        directories = get_paths() or []
     
     if not directories:
-        logger.warning("未输入有效路径，程序退出")
+        logger.warning("未获取到任何有效路径，程序退出")
         return
     
     # 加载配置文件
@@ -368,4 +376,11 @@ def main():
     logger.info("所有操作已完成")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.warning("\n操作已由用户中断")
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"程序运行出错: {e}")
+        sys.exit(1)
